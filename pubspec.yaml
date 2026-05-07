@@ -1,5 +1,6 @@
 name: nimo_app
-description: "NIMO Chat App"
+description: "NIMO Realtime Chat App"
+
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -11,33 +12,94 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # =====================================
   # 🎨 UI
+  # =====================================
+
   cupertino_icons: ^1.0.8
 
+  # =====================================
   # 🔥 SUPABASE
+  # =====================================
+
   supabase_flutter: ^2.5.6
   flutter_dotenv: ^6.0.1
 
-  # 📸 IMAGE PICKER
-  image_picker: ^1.0.7
+  # =====================================
+  # 🔐 AUTH
+  # =====================================
 
-  # 🎤 AUDIO RECORDING
+  google_sign_in: ^6.2.1
+
+  # =====================================
+  # 📸 MEDIA
+  # =====================================
+
+  image_picker: ^1.1.2
   record: ^6.0.0
+  just_audio: ^0.9.39
+  file_picker: ^8.0.7
 
-  # 🔊 AUDIO PLAYBACK
-  just_audio: ^0.9.36
+  # =====================================
+  # 📁 STORAGE & FILES
+  # =====================================
 
-  # 📁 FILE PATH
-  path_provider: ^2.1.2
+  path_provider: ^2.1.4
+  path: ^1.9.0
 
-  # 🌐 INTERNET CHECK
+  # =====================================
+  # 🌐 INTERNET
+  # =====================================
+
   connectivity_plus: ^6.0.5
 
+  # =====================================
   # 🔐 PERMISSIONS
+  # =====================================
+
   permission_handler: ^11.3.1
 
+  # =====================================
   # 📤 SHARE
-  share_plus: ^13.1.0
+  # =====================================
+
+  share_plus: ^10.0.2
+
+  # =====================================
+  # 🖼 CACHED IMAGES
+  # =====================================
+
+  cached_network_image: ^3.4.1
+
+  # =====================================
+  # 🎞 ANIMATIONS
+  # =====================================
+
+  flutter_animate: ^4.5.0
+
+  # =====================================
+  # 📅 TIME FORMAT
+  # =====================================
+
+  intl: ^0.19.0
+
+  # =====================================
+  # 🔊 AUDIO VISUAL
+  # =====================================
+
+  audio_waveforms: ^1.1.0
+
+  # =====================================
+  # 🔔 NOTIFICATIONS
+  # =====================================
+
+  flutter_local_notifications: ^17.2.1
+
+  # =====================================
+  # 🧠 STATE MANAGEMENT
+  # =====================================
+
+  provider: ^6.1.2
 
 dev_dependencies:
   flutter_test:
@@ -45,7 +107,10 @@ dev_dependencies:
 
   flutter_lints: ^6.0.0
 
+  # =====================================
   # 🎨 APP ICON
+  # =====================================
+
   flutter_launcher_icons: ^0.14.4
 
 flutter:
@@ -53,9 +118,14 @@ flutter:
 
   assets:
     - .env
+    - assets/images/
     - assets/images/nimo_logo.png
 
 flutter_launcher_icons:
   android: true
   ios: true
+
   image_path: "assets/images/nimo_logo.png"
+
+  adaptive_icon_background: "#6C5CE7"
+  adaptive_icon_foreground: "assets/images/nimo_logo.png"

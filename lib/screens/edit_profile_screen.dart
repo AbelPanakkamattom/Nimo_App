@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -16,14 +17,18 @@ class EditProfileScreen extends StatefulWidget {
 }
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
-  final client = Supabase.instance.client;
+  final SupabaseClient client = Supabase.instance.client;
 
-  final nameController = TextEditingController();
-  final descController = TextEditingController();
+  final TextEditingController nameController =
+  TextEditingController();
 
-  final picker = ImagePicker();
+  final TextEditingController bioController =
+  TextEditingController();
 
-  File? image;
+  final ImagePicker picker = ImagePicker();
+
+  File? selectedImage;
+
   bool loading = false;
   bool imageLoading = false;
 
@@ -31,75 +36,105 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void initState() {
     super.initState();
 
-    nameController.text = widget.profile['username'] ?? '';
-    descController.text = widget.profile['description'] ?? '';
+    nameController.text =
+        widget.profile['name']?.toString() ??
+            widget.profile['username']?.toString() ??
+            '';
+
+    bioController.text =
+        widget.profile['description']?.toString() ??
+            '';
   }
 
-  void showMessage(String msg) {
+  /// =========================
+  /// 🔥 SNACKBAR
+  /// =========================
+
+  void showMessage(String text) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
+  /// =========================
   /// 📸 PICK IMAGE
+  /// =========================
+
   Future<void> pickImage() async {
     try {
       final picked = await picker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 70,
+        imageQuality: 75,
       );
 
-      if (picked != null && mounted) {
-        setState(() => image = File(picked.path));
-      }
+      if (picked == null) return;
+
+      if (!mounted) return;
+
+      setState(() {
+        selectedImage = File(picked.path);
+      });
     } catch (e) {
       showMessage("Failed to pick image");
     }
   }
 
+  /// =========================
   /// 📤 UPLOAD IMAGE
-  Future<String?> uploadImage(String userId) async {
-    final storage = client.storage.from('avatarz');
-    final path = "$userId/profile.jpg";
+  /// =========================
 
+  Future<String?> uploadAvatar(String userId) async {
     try {
-      /// No new image → keep old
-      if (image == null) {
+      if (selectedImage == null) {
         return widget.profile['avatar_url'];
       }
 
-      setState(() => imageLoading = true);
+      if (mounted) {
+        setState(() {
+          imageLoading = true;
+        });
+      }
 
-      /// Delete old image (ignore errors)
-      try {
-        await storage.remove([path]);
-      } catch (_) {}
+      final storage = client.storage.from('avatarz');
 
-      /// Upload new image
+      final path =
+          '$userId/avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
       await storage.upload(
         path,
-        image!,
+        selectedImage!,
         fileOptions: const FileOptions(
           upsert: true,
           cacheControl: '3600',
         ),
       );
 
-      /// Force refresh image URL
       final url =
-          "${storage.getPublicUrl(path)}?t=${DateTime.now().millisecondsSinceEpoch}";
+          '${storage.getPublicUrl(path)}?t=${DateTime.now().millisecondsSinceEpoch}';
 
       return url;
     } catch (e) {
-      debugPrint("UPLOAD ERROR: $e");
+      debugPrint("IMAGE ERROR: $e");
       showMessage("Image upload failed");
       return widget.profile['avatar_url'];
     } finally {
-      if (mounted) setState(() => imageLoading = false);
+      if (mounted) {
+        setState(() {
+          imageLoading = false;
+        });
+      }
     }
   }
 
+  /// =========================
   /// 💾 SAVE PROFILE
+  /// =========================
+
   Future<void> saveProfile() async {
     final user = client.auth.currentUser;
 
@@ -111,141 +146,270 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final name = nameController.text.trim();
 
     if (name.isEmpty) {
-      showMessage("Name required");
+      showMessage("Name is required");
       return;
     }
 
     if (loading) return;
 
-    setState(() => loading = true);
+    setState(() {
+      loading = true;
+    });
 
     try {
-      final imageUrl = await uploadImage(user.id);
+      final avatarUrl = await uploadAvatar(user.id);
 
-      final response = await client
+      await client
           .from('profiles')
           .update({
-        'username': name,
-        'description': descController.text.trim(),
-        'avatar_url': imageUrl,
+        'name': name,
+        'description': bioController.text.trim(),
+        'avatar_url': avatarUrl,
       })
-          .eq('id', user.id)
-          .select(); // 🔥 IMPORTANT
-
-      if (response.isEmpty) {
-        showMessage("Update failed (no row affected)");
-        return;
-      }
+          .eq('id', user.id);
 
       if (!mounted) return;
 
-      showMessage("Profile updated");
+      Navigator.pop(context, true);
 
-      Navigator.pop(context, true); // ✅ trigger refresh
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Profile updated"),
+        ),
+      );
     } catch (e) {
-      debugPrint("UPDATE ERROR: $e");
-      showMessage("Update failed");
+      debugPrint("PROFILE UPDATE ERROR: $e");
+
+      if (!mounted) return;
+
+      showMessage("Failed to update profile");
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted) {
+        setState(() {
+          loading = false;
+        });
+      }
     }
+  }
+
+  /// =========================
+  /// 🖼 AVATAR
+  /// =========================
+
+  Widget buildAvatar() {
+    final avatarUrl =
+    widget.profile['avatar_url']?.toString();
+
+    ImageProvider? provider;
+
+    if (selectedImage != null) {
+      provider = FileImage(selectedImage!);
+    } else if (avatarUrl != null &&
+        avatarUrl.isNotEmpty) {
+      provider = NetworkImage(avatarUrl);
+    }
+
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        GestureDetector(
+          onTap: pickImage,
+          child: CircleAvatar(
+            radius: 60,
+            backgroundColor: const Color(0xFF6C5CE7),
+            backgroundImage: provider,
+            child: provider == null
+                ? const Icon(
+              Icons.person,
+              color: Colors.white,
+              size: 55,
+            )
+                : null,
+          ),
+        ),
+
+        Positioned(
+          bottom: 0,
+          right: 0,
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF6C5CE7),
+              borderRadius: BorderRadius.circular(30),
+            ),
+            child: const Icon(
+              Icons.camera_alt,
+              color: Colors.white,
+              size: 18,
+            ),
+          ),
+        ),
+
+        if (imageLoading)
+          Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.4),
+              shape: BoxShape.circle,
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(
+                color: Colors.white,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// =========================
+  /// 🧱 UI
+  /// =========================
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F6FF),
+
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        centerTitle: false,
+        title: const Text(
+          "Edit Profile",
+          style: TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+
+              /// PROFILE IMAGE
+              buildAvatar(),
+
+              const SizedBox(height: 14),
+
+              const Text(
+                "Tap photo to change",
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontSize: 13,
+                ),
+              ),
+
+              const SizedBox(height: 35),
+
+              /// NAME
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius:
+                  BorderRadius.circular(18),
+                ),
+                child: TextField(
+                  controller: nameController,
+                  textCapitalization:
+                  TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    hintText: "Your name",
+                    prefixIcon: Icon(Icons.person),
+                    border: InputBorder.none,
+                    contentPadding:
+                    EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 18,
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              /// ABOUT
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius:
+                  BorderRadius.circular(18),
+                ),
+                child: TextField(
+                  controller: bioController,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    hintText: "About you",
+                    prefixIcon: Padding(
+                      padding: EdgeInsets.only(
+                        bottom: 65,
+                      ),
+                      child: Icon(Icons.info_outline),
+                    ),
+                    border: InputBorder.none,
+                    contentPadding:
+                    EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 18,
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 35),
+
+              /// SAVE BUTTON
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed:
+                  loading ? null : saveProfile,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor:
+                    const Color(0xFF6C5CE7),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius:
+                      BorderRadius.circular(18),
+                    ),
+                  ),
+                  child: loading
+                      ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child:
+                    CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white,
+                    ),
+                  )
+                      : const Text(
+                    "Save Changes",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight:
+                      FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   void dispose() {
     nameController.dispose();
-    descController.dispose();
+    bioController.dispose();
     super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final avatarUrl = widget.profile['avatar_url'];
-
-    ImageProvider? avatarProvider;
-
-    if (image != null) {
-      avatarProvider = FileImage(image!);
-    } else if (avatarUrl != null && avatarUrl.toString().isNotEmpty) {
-      avatarProvider = NetworkImage(avatarUrl);
-    }
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FF),
-      appBar: AppBar(
-        title: const Text("Edit Profile"),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-
-            /// PROFILE IMAGE
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                GestureDetector(
-                  onTap: pickImage,
-                  child: CircleAvatar(
-                    radius: 55,
-                    backgroundColor: const Color(0xFF6C5CE7),
-                    backgroundImage: avatarProvider,
-                    child: avatarProvider == null
-                        ? const Icon(Icons.person,
-                        size: 50, color: Colors.white)
-                        : null,
-                  ),
-                ),
-                if (imageLoading)
-                  const CircularProgressIndicator(),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            const Text(
-              "Tap to change photo",
-              style: TextStyle(color: Colors.grey),
-            ),
-
-            const SizedBox(height: 30),
-
-            /// NAME
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                hintText: "Enter your name",
-                prefixIcon: Icon(Icons.person),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            /// DESCRIPTION
-            TextField(
-              controller: descController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: "About you",
-                prefixIcon: Icon(Icons.info),
-              ),
-            ),
-
-            const SizedBox(height: 30),
-
-            /// SAVE BUTTON
-            SizedBox(
-              width: double.infinity,
-              height: 55,
-              child: ElevatedButton(
-                onPressed: loading ? null : saveProfile,
-                child: loading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text("Save Changes"),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

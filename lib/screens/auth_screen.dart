@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -8,278 +10,603 @@ class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
 
   @override
-  State<AuthScreen> createState() => _AuthScreenState();
+  State<AuthScreen> createState() =>
+      _AuthScreenState();
 }
 
-class _AuthScreenState extends State<AuthScreen> {
-  final supabase = Supabase.instance.client;
+class _AuthScreenState
+    extends State<AuthScreen> {
+  final SupabaseClient supabase =
+      Supabase.instance.client;
 
-  final emailController = TextEditingController();
+  final TextEditingController
+  emailController =
+  TextEditingController();
+
+  StreamSubscription<AuthState>?
+  authSubscription;
 
   bool loadingEmail = false;
   bool loadingGoogle = false;
 
-  late final Stream<AuthState> _authStream;
+  static const Color primary =
+  Color(0xFF6C5CE7);
 
   @override
   void initState() {
     super.initState();
 
-    /// 🔥 LISTEN LOGIN STATE
-    _authStream = supabase.auth.onAuthStateChange;
+    listenAuth();
+  }
 
-    _authStream.listen((data) async {
-      final session = data.session;
+  /// =====================================
+  /// 🔥 AUTH LISTENER
+  /// =====================================
 
-      if (session != null && mounted) {
-        final user = session.user;
+  void listenAuth() {
+    authSubscription = supabase
+        .auth.onAuthStateChange
+        .listen(
+          (data) async {
+        final session =
+            data.session;
 
-        final profile = await supabase
-            .from('profiles')
-            .select()
-            .eq('id', user.id)
-            .maybeSingle();
-
-        if (!mounted) return;
-
-        if (profile == null) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => RegisterScreen(email: user.email ?? ""),
-            ),
-          );
-        } else {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (_) => const HomeScreen()),
-                (_) => false,
-          );
+        if (session == null) {
+          return;
         }
-      }
-    });
+
+        final user =
+            session.user;
+
+        try {
+          final profile =
+          await supabase
+              .from('profiles')
+              .select()
+              .eq('id', user.id)
+              .maybeSingle();
+
+          if (!mounted) return;
+
+          if (profile != null) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                const HomeScreen(),
+              ),
+                  (route) => false,
+            );
+          } else {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    RegisterScreen(
+                      email:
+                      user.email ??
+                          '',
+                    ),
+              ),
+                  (route) => false,
+            );
+          }
+        } catch (_) {}
+      },
+    );
   }
 
-  @override
-  void dispose() {
-    emailController.dispose();
-    super.dispose();
-  }
+  /// =====================================
+  /// 🔔 SNACKBAR
+  /// =====================================
 
-  bool _isValidEmail(String email) {
-    return RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(email);
-  }
-
-  void _show(String msg) {
+  void showMessage(String text) {
     if (!mounted) return;
+
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+        .showSnackBar(
+      SnackBar(
+        content: Text(text),
+        behavior:
+        SnackBarBehavior.floating,
+      ),
+    );
   }
 
-  /// ============================
-  /// EMAIL OTP LOGIN
-  /// ============================
-  Future<void> _sendOtp() async {
-    final email = emailController.text.trim().toLowerCase();
+  /// =====================================
+  /// 📧 EMAIL VALIDATION
+  /// =====================================
 
-    if (!_isValidEmail(email)) {
-      _show("Enter valid email");
+  bool isValidEmail(
+      String email,
+      ) {
+    return RegExp(
+      r'^[^@]+@[^@]+\.[^@]+',
+    ).hasMatch(email);
+  }
+
+  /// =====================================
+  /// 📩 SEND OTP
+  /// =====================================
+
+  Future<void> sendOtp() async {
+    final email =
+    emailController.text
+        .trim()
+        .toLowerCase();
+
+    if (!isValidEmail(email)) {
+      showMessage(
+        'Enter valid email',
+      );
       return;
     }
 
-    setState(() => loadingEmail = true);
+    if (loadingEmail) return;
+
+    setState(() {
+      loadingEmail = true;
+    });
 
     try {
-      await supabase.auth.signInWithOtp(email: email);
+      await supabase.auth
+          .signInWithOtp(
+        email: email,
+      );
 
       if (!mounted) return;
 
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => VerifyOtpScreen(email: email),
+          builder: (_) =>
+              VerifyOtpScreen(
+                email: email,
+              ),
         ),
       );
-    } catch (e) {
-      _show("Failed to send OTP");
+    } catch (_) {
+      showMessage(
+        'Failed to send OTP',
+      );
     } finally {
-      if (mounted) setState(() => loadingEmail = false);
+      if (mounted) {
+        setState(() {
+          loadingEmail = false;
+        });
+      }
     }
   }
 
-  /// ============================
-  /// GOOGLE LOGIN
-  /// ============================
-  Future<void> _signInWithGoogle() async {
-    setState(() => loadingGoogle = true);
+  /// =====================================
+  /// 🔵 GOOGLE LOGIN
+  /// =====================================
+
+  Future<void>
+  loginWithGoogle() async {
+    if (loadingGoogle) return;
+
+    setState(() {
+      loadingGoogle = true;
+    });
 
     try {
-      await supabase.auth.signInWithOAuth(
+      await supabase.auth
+          .signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: 'io.supabase.flutter://login-callback',
+        redirectTo:
+        'io.supabase.flutter://login-callback/',
+        authScreenLaunchMode:
+        LaunchMode.externalApplication,
       );
-    } catch (e) {
-      _show("Google login failed");
-      if (mounted) setState(() => loadingGoogle = false);
+    } catch (_) {
+      showMessage(
+        'Google login failed',
+      );
+
+      if (mounted) {
+        setState(() {
+          loadingGoogle = false;
+        });
+      }
     }
   }
 
+  /// =====================================
+  /// UI
+  /// =====================================
+
   @override
-  Widget build(BuildContext context) {
-    const primary = Color(0xFF6C5CE7);
-
+  Widget build(
+      BuildContext context,
+      ) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FF),
+      backgroundColor:
+      const Color(0xFFF5F6FF),
+
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              /// LOGO
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: primary.withValues(alpha: 0.1), // FIXED
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.chat, color: primary, size: 40),
-              ),
-
-              const SizedBox(height: 20),
-
-              const Text(
-                "Welcome to NIMO",
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-              ),
-
-              const SizedBox(height: 8),
-
-              const Text(
-                "Login or create your account",
-                style: TextStyle(color: Colors.grey),
-              ),
-
-              const SizedBox(height: 30),
-
-              /// EMAIL FIELD
-              TextField(
-                controller: emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  hintText: "Enter your email",
-                  prefixIcon: Icon(Icons.email_outlined),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              /// EMAIL BUTTON
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: loadingEmail ? null : _sendOtp,
-                  child: loadingEmail
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text("Continue with Email"),
-                ),
-              ),
-
-              const SizedBox(height: 25),
-
-              /// DIVIDER
-              Row(
-                children: const [
-                  Expanded(child: Divider()),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 10),
-                    child: Text("OR"),
-                  ),
-                  Expanded(child: Divider()),
-                ],
-              ),
-
-              const SizedBox(height: 25),
-
-              /// GOOGLE BUTTON
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: OutlinedButton(
-                  onPressed: loadingGoogle ? null : _signInWithGoogle,
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    side: BorderSide(color: Colors.grey.shade300),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+        child: GestureDetector(
+          onTap: () {
+            FocusScope.of(context)
+                .unfocus();
+          },
+          child: SingleChildScrollView(
+            padding:
+            const EdgeInsets.symmetric(
+              horizontal: 24,
+              vertical: 20,
+            ),
+            child: SizedBox(
+              height:
+              MediaQuery.of(context)
+                  .size
+                  .height -
+                  60,
+              child: Column(
+                mainAxisAlignment:
+                MainAxisAlignment
+                    .center,
+                children: [
+                  /// LOGO
+                  Container(
+                    width: 100,
+                    height: 100,
+                    decoration:
+                    BoxDecoration(
+                      color: primary
+                          .withValues(
+                        alpha: 0.1,
+                      ),
+                      shape:
+                      BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.chat,
+                      size: 50,
+                      color: primary,
                     ),
                   ),
-                  child: loadingGoogle
-                      ? const CircularProgressIndicator()
-                      : Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Image.network(
-                        "https://cdn-icons-png.flaticon.com/512/300/300221.png",
-                        height: 22,
+
+                  const SizedBox(
+                    height: 24,
+                  ),
+
+                  const Text(
+                    'Welcome to NIMO',
+                    style: TextStyle(
+                      fontSize: 30,
+                      fontWeight:
+                      FontWeight.bold,
+                    ),
+                  ),
+
+                  const SizedBox(
+                    height: 10,
+                  ),
+
+                  const Text(
+                    'Fast, secure & realtime messaging',
+                    textAlign:
+                    TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 15,
+                    ),
+                  ),
+
+                  const SizedBox(
+                    height: 40,
+                  ),
+
+                  /// EMAIL FIELD
+                  Container(
+                    decoration:
+                    BoxDecoration(
+                      color: Colors.white,
+                      borderRadius:
+                      BorderRadius
+                          .circular(
+                        18,
                       ),
-                      const SizedBox(width: 10),
-                      const Text(
-                        "Continue with Google",
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontWeight: FontWeight.w500,
+                    ),
+                    child: TextField(
+                      controller:
+                      emailController,
+                      keyboardType:
+                      TextInputType
+                          .emailAddress,
+                      decoration:
+                      const InputDecoration(
+                        hintText:
+                        'Enter your email',
+                        prefixIcon:
+                        Icon(
+                          Icons
+                              .email_outlined,
+                        ),
+                        border:
+                        InputBorder.none,
+                        contentPadding:
+                        EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(
+                    height: 18,
+                  ),
+
+                  /// EMAIL BUTTON
+                  SizedBox(
+                    width:
+                    double.infinity,
+                    height: 56,
+                    child:
+                    ElevatedButton(
+                      onPressed:
+                      loadingEmail
+                          ? null
+                          : sendOtp,
+                      style:
+                      ElevatedButton.styleFrom(
+                        backgroundColor:
+                        primary,
+                        foregroundColor:
+                        Colors.white,
+                        shape:
+                        RoundedRectangleBorder(
+                          borderRadius:
+                          BorderRadius.circular(
+                            18,
+                          ),
+                        ),
+                      ),
+                      child:
+                      loadingEmail
+                          ? const SizedBox(
+                        width: 24,
+                        height:
+                        24,
+                        child:
+                        CircularProgressIndicator(
+                          strokeWidth:
+                          2.5,
+                          color: Colors
+                              .white,
+                        ),
+                      )
+                          : const Text(
+                        'Continue with Email',
+                        style:
+                        TextStyle(
+                          fontSize:
+                          16,
+                          fontWeight:
+                          FontWeight
+                              .w600,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(
+                    height: 30,
+                  ),
+
+                  /// DIVIDER
+                  Row(
+                    children: [
+                      Expanded(
+                        child:
+                        Divider(
+                          color: Colors
+                              .grey
+                              .shade300,
+                        ),
+                      ),
+                      Padding(
+                        padding:
+                        const EdgeInsets.symmetric(
+                          horizontal: 14,
+                        ),
+                        child: Text(
+                          'OR',
+                          style:
+                          TextStyle(
+                            color: Colors
+                                .grey
+                                .shade600,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child:
+                        Divider(
+                          color: Colors
+                              .grey
+                              .shade300,
                         ),
                       ),
                     ],
                   ),
-                ),
+
+                  const SizedBox(
+                    height: 30,
+                  ),
+
+                  /// GOOGLE BUTTON
+                  SizedBox(
+                    width:
+                    double.infinity,
+                    height: 56,
+                    child:
+                    OutlinedButton(
+                      onPressed:
+                      loadingGoogle
+                          ? null
+                          : loginWithGoogle,
+                      style:
+                      OutlinedButton.styleFrom(
+                        backgroundColor:
+                        Colors.white,
+                        side: BorderSide(
+                          color: Colors
+                              .grey
+                              .shade300,
+                        ),
+                        shape:
+                        RoundedRectangleBorder(
+                          borderRadius:
+                          BorderRadius.circular(
+                            18,
+                          ),
+                        ),
+                      ),
+                      child:
+                      loadingGoogle
+                          ? const SizedBox(
+                        width: 24,
+                        height:
+                        24,
+                        child:
+                        CircularProgressIndicator(),
+                      )
+                          : const Row(
+                        mainAxisAlignment:
+                        MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons
+                                .g_mobiledata,
+                            size: 40,
+                            color:
+                            Colors.red,
+                          ),
+                          SizedBox(
+                            width: 6,
+                          ),
+                          Text(
+                            'Continue with Google',
+                            style:
+                            TextStyle(
+                              color:
+                              Colors.black,
+                              fontSize:
+                              15,
+                              fontWeight:
+                              FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(
+                    height: 30,
+                  ),
+
+                  Text(
+                    'By continuing you agree to NIMO Terms & Privacy Policy',
+                    textAlign:
+                    TextAlign.center,
+                    style: TextStyle(
+                      color: Colors
+                          .grey.shade600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
-}
-
-/// ============================
-/// OTP SCREEN
-/// ============================
-
-class VerifyOtpScreen extends StatefulWidget {
-  final String email;
-
-  const VerifyOtpScreen({super.key, required this.email});
 
   @override
-  State<VerifyOtpScreen> createState() => _VerifyOtpScreenState();
+  void dispose() {
+    authSubscription?.cancel();
+    emailController.dispose();
+    super.dispose();
+  }
 }
 
-class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
-  final supabase = Supabase.instance.client;
+/// =====================================
+/// 🔐 VERIFY OTP SCREEN
+/// =====================================
 
-  final otpController = TextEditingController();
+class VerifyOtpScreen
+    extends StatefulWidget {
+  final String email;
+
+  const VerifyOtpScreen({
+    super.key,
+    required this.email,
+  });
+
+  @override
+  State<VerifyOtpScreen>
+  createState() =>
+      _VerifyOtpScreenState();
+}
+
+class _VerifyOtpScreenState
+    extends State<
+        VerifyOtpScreen> {
+  final SupabaseClient supabase =
+      Supabase.instance.client;
+
+  final TextEditingController
+  otpController =
+  TextEditingController();
 
   bool loading = false;
 
-  void _show(String msg) {
+  static const Color primary =
+  Color(0xFF6C5CE7);
+
+  /// =====================================
+  /// 🔔 SNACKBAR
+  /// =====================================
+
+  void showMessage(String text) {
     if (!mounted) return;
+
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+        .showSnackBar(
+      SnackBar(
+        content: Text(text),
+        behavior:
+        SnackBarBehavior.floating,
+      ),
+    );
   }
 
-  Future<void> _verifyOtp() async {
-    final otp = otpController.text.trim();
+  /// =====================================
+  /// ✅ VERIFY OTP
+  /// =====================================
+
+  Future<void> verifyOtp() async {
+    final otp =
+    otpController.text.trim();
 
     if (otp.length != 6) {
-      _show("Enter 6-digit OTP");
+      showMessage(
+        'Enter 6-digit OTP',
+      );
       return;
     }
 
-    setState(() => loading = true);
+    if (loading) return;
+
+    setState(() {
+      loading = true;
+    });
 
     try {
       await supabase.auth.verifyOTP(
@@ -288,14 +615,18 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
         type: OtpType.email,
       );
 
-      final user = supabase.auth.currentUser;
+      final user =
+          supabase.auth.currentUser;
 
       if (user == null) {
-        _show("Auth failed");
+        showMessage(
+          'Authentication failed',
+        );
         return;
       }
 
-      final profile = await supabase
+      final profile =
+      await supabase
           .from('profiles')
           .select()
           .eq('id', user.id)
@@ -303,64 +634,237 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
 
       if (!mounted) return;
 
-      if (profile == null) {
-        Navigator.pushReplacement(
+      if (profile != null) {
+        Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(
-            builder: (_) => RegisterScreen(email: widget.email),
+            builder: (_) =>
+            const HomeScreen(),
           ),
+              (route) => false,
         );
       } else {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
-              (_) => false,
+          MaterialPageRoute(
+            builder: (_) =>
+                RegisterScreen(
+                  email:
+                  widget.email,
+                ),
+          ),
+              (route) => false,
         );
       }
-    } catch (e) {
-      _show("Invalid OTP");
+    } catch (_) {
+      showMessage(
+        'Invalid OTP',
+      );
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted) {
+        setState(() {
+          loading = false;
+        });
+      }
     }
+  }
+
+  /// =====================================
+  /// UI
+  /// =====================================
+
+  @override
+  Widget build(
+      BuildContext context,
+      ) {
+    return Scaffold(
+      backgroundColor:
+      const Color(0xFFF5F6FF),
+
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor:
+        Colors.transparent,
+      ),
+
+      body: SafeArea(
+        child: GestureDetector(
+          onTap: () {
+            FocusScope.of(context)
+                .unfocus();
+          },
+          child: Padding(
+            padding:
+            const EdgeInsets.all(
+              24,
+            ),
+            child: Column(
+              mainAxisAlignment:
+              MainAxisAlignment
+                  .center,
+              children: [
+                Container(
+                  width: 90,
+                  height: 90,
+                  decoration:
+                  BoxDecoration(
+                    color: primary
+                        .withValues(
+                      alpha: 0.1,
+                    ),
+                    shape:
+                    BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.lock,
+                    size: 42,
+                    color: primary,
+                  ),
+                ),
+
+                const SizedBox(
+                  height: 24,
+                ),
+
+                const Text(
+                  'Verify OTP',
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight:
+                    FontWeight.bold,
+                  ),
+                ),
+
+                const SizedBox(
+                  height: 10,
+                ),
+
+                Text(
+                  widget.email,
+                  textAlign:
+                  TextAlign.center,
+                  style:
+                  const TextStyle(
+                    color: Colors.grey,
+                  ),
+                ),
+
+                const SizedBox(
+                  height: 35,
+                ),
+
+                /// OTP FIELD
+                Container(
+                  decoration:
+                  BoxDecoration(
+                    color: Colors.white,
+                    borderRadius:
+                    BorderRadius
+                        .circular(
+                      18,
+                    ),
+                  ),
+                  child: TextField(
+                    controller:
+                    otpController,
+                    keyboardType:
+                    TextInputType
+                        .number,
+                    maxLength: 6,
+                    textAlign:
+                    TextAlign.center,
+                    style:
+                    const TextStyle(
+                      fontSize: 22,
+                      letterSpacing:
+                      8,
+                      fontWeight:
+                      FontWeight.bold,
+                    ),
+                    decoration:
+                    const InputDecoration(
+                      hintText:
+                      '------',
+                      counterText:
+                      '',
+                      border:
+                      InputBorder.none,
+                      contentPadding:
+                      EdgeInsets.symmetric(
+                        vertical: 18,
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(
+                  height: 28,
+                ),
+
+                /// VERIFY BUTTON
+                SizedBox(
+                  width:
+                  double.infinity,
+                  height: 56,
+                  child:
+                  ElevatedButton(
+                    onPressed:
+                    loading
+                        ? null
+                        : verifyOtp,
+                    style:
+                    ElevatedButton.styleFrom(
+                      backgroundColor:
+                      primary,
+                      foregroundColor:
+                      Colors.white,
+                      shape:
+                      RoundedRectangleBorder(
+                        borderRadius:
+                        BorderRadius.circular(
+                          18,
+                        ),
+                      ),
+                    ),
+                    child:
+                    loading
+                        ? const SizedBox(
+                      width:
+                      24,
+                      height:
+                      24,
+                      child:
+                      CircularProgressIndicator(
+                        strokeWidth:
+                        2.5,
+                        color: Colors
+                            .white,
+                      ),
+                    )
+                        : const Text(
+                      'Verify OTP',
+                      style:
+                      TextStyle(
+                        fontSize:
+                        16,
+                        fontWeight:
+                        FontWeight
+                            .w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   void dispose() {
     otpController.dispose();
     super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Verify OTP")),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(widget.email),
-            const SizedBox(height: 20),
-            TextField(
-              controller: otpController,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              textAlign: TextAlign.center,
-              decoration: const InputDecoration(
-                hintText: "Enter OTP",
-                counterText: "",
-              ),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: loading ? null : _verifyOtp,
-              child: loading
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text("Verify"),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
