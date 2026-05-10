@@ -3,492 +3,313 @@ import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+// Screens
 import 'screens/auth_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/splash_screen.dart';
-import 'services/supabase_chat_service.dart';
 
-/// =======================================
-/// 🌍 GLOBAL SUPABASE CLIENT
-/// =======================================
-
-late final SupabaseClient supabase;
+// Services
+import 'services/notification_service.dart';
+import 'services/online_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  /// STATUS BAR
+  // =========================================================
+  // LOCK PORTRAIT MODE
+  // =========================================================
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+  ]);
+
+  // =========================================================
+  // STATUS BAR STYLE
+  // =========================================================
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
-      statusBarColor:
-      Colors.transparent,
-      statusBarIconBrightness:
-      Brightness.dark,
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      statusBarBrightness: Brightness.light,
     ),
   );
 
+  // =========================================================
+  // LOAD ENVIRONMENT VARIABLES
+  // =========================================================
   try {
-    /// LOAD ENV
-    await dotenv.load(
-      fileName: '.env',
-    );
+    await dotenv.load(fileName: '.env');
+  } catch (e) {
+    debugPrint('ENV LOAD ERROR: $e');
+  }
 
-    final url =
-    dotenv.env['SUPABASE_URL']
-        ?.trim();
+  // =========================================================
+  // INITIALIZE SUPABASE
+  // =========================================================
+  try {
+    final url = dotenv.env['SUPABASE_URL'];
+    final anonKey = dotenv.env['SUPABASE_ANON_KEY'];
 
-    final anonKey = dotenv
-        .env['SUPABASE_ANON_KEY']
-        ?.trim();
-
-    if (url == null ||
-        url.isEmpty ||
-        anonKey == null ||
-        anonKey.isEmpty) {
-      throw Exception(
-        'Missing Supabase credentials',
+    if (url != null &&
+        url.isNotEmpty &&
+        anonKey != null &&
+        anonKey.isNotEmpty) {
+      await Supabase.initialize(
+        url: url,
+        anonKey: anonKey,
+        debug: false,
+      );
+    } else {
+      debugPrint(
+        'SUPABASE_URL or SUPABASE_ANON_KEY missing in .env',
       );
     }
-
-    /// INIT SUPABASE
-    await Supabase.initialize(
-      url: url,
-      anonKey: anonKey,
-      debug: true,
-
-      authOptions:
-      const FlutterAuthClientOptions(
-        autoRefreshToken: true,
-      ),
-    );
-
-    supabase =
-        Supabase.instance.client;
-
-    runApp(
-      const MyApp(),
-    );
   } catch (e) {
-    debugPrint(
-      'MAIN INIT ERROR: $e',
-    );
+    debugPrint('SUPABASE INIT ERROR: $e');
+  }
 
-    runApp(
-      const ConfigErrorApp(),
+  // =========================================================
+  // INITIALIZE LOCAL NOTIFICATIONS
+  // =========================================================
+  try {
+    await NotificationService.initialize();
+  } catch (e) {
+    debugPrint('NOTIFICATION INIT ERROR: $e');
+  }
+
+  runApp(const NimoApp());
+}
+
+// =========================================================
+// APP ROOT
+// =========================================================
+
+class NimoApp extends StatelessWidget {
+  const NimoApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'NIMO',
+      debugShowCheckedModeBanner: false,
+      theme: _buildTheme(),
+      home: const AppBootstrapper(),
     );
   }
 }
 
-/// =======================================
-/// 🚀 MAIN APP
-/// =======================================
+// =========================================================
+// APP BOOTSTRAPPER
+// =========================================================
 
-class MyApp extends StatefulWidget {
-  const MyApp({super.key});
+class AppBootstrapper extends StatefulWidget {
+  const AppBootstrapper({super.key});
 
   @override
-  State<MyApp> createState() =>
-      _MyAppState();
+  State<AppBootstrapper> createState() =>
+      _AppBootstrapperState();
 }
 
-class _MyAppState
-    extends State<MyApp>
+class _AppBootstrapperState
+    extends State<AppBootstrapper>
     with WidgetsBindingObserver {
-  static const Color primary =
-  Color(0xFF6C5CE7);
+  bool _initialized = false;
+  bool _hasError = false;
+  String _errorMessage = '';
+
+  // =========================================================
+  // INIT
+  // =========================================================
 
   @override
   void initState() {
     super.initState();
-
-    WidgetsBinding.instance
-        .addObserver(this);
-
-    /// USER ONLINE
-    SupabaseChatService
-        .setOnlineStatus(true);
+    WidgetsBinding.instance.addObserver(this);
+    _initialize();
   }
 
-  @override
-  void dispose() {
-    WidgetsBinding.instance
-        .removeObserver(this);
+  // =========================================================
+  // INITIALIZE APP SERVICES
+  // =========================================================
 
-    /// USER OFFLINE
-    SupabaseChatService
-        .setOnlineStatus(false);
+  Future<void> _initialize() async {
+    try {
+      // Set current user online if logged in
+      await OnlineService.setOnline();
 
-    super.dispose();
+      // Splash delay
+      await Future.delayed(
+        const Duration(milliseconds: 1800),
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _initialized = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _hasError = true;
+        _errorMessage = e.toString();
+      });
+    }
   }
 
-  /// =======================================
-  /// 📱 APP LIFECYCLE
-  /// =======================================
+  // =========================================================
+  // APP LIFECYCLE
+  // =========================================================
 
   @override
   void didChangeAppLifecycleState(
       AppLifecycleState state,
       ) {
-    if (state ==
-        AppLifecycleState.resumed) {
-      SupabaseChatService
-          .setOnlineStatus(true);
-    }
+    switch (state) {
+      case AppLifecycleState.resumed:
+        OnlineService.setOnline();
+        break;
 
-    if (state ==
-        AppLifecycleState
-            .paused ||
-        state ==
-            AppLifecycleState
-                .detached) {
-      SupabaseChatService
-          .setOnlineStatus(false);
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+        OnlineService.setOffline();
+        break;
     }
   }
 
-  /// =======================================
-  /// 🎨 THEME
-  /// =======================================
-
-  ThemeData buildTheme() {
-    return ThemeData(
-      useMaterial3: true,
-
-      colorScheme:
-      ColorScheme.fromSeed(
-        seedColor: primary,
-      ),
-
-      scaffoldBackgroundColor:
-      const Color(0xFFF5F6FF),
-
-      fontFamily: 'Roboto',
-
-      splashColor:
-      Colors.transparent,
-
-      highlightColor:
-      Colors.transparent,
-
-      dividerColor:
-      Colors.transparent,
-
-      /// APPBAR
-      appBarTheme:
-      const AppBarTheme(
-        elevation: 0,
-        centerTitle: false,
-        backgroundColor:
-        Colors.transparent,
-
-        surfaceTintColor:
-        Colors.transparent,
-
-        iconTheme: IconThemeData(
-          color: Colors.black,
-        ),
-
-        titleTextStyle:
-        TextStyle(
-          color: Colors.black,
-          fontSize: 20,
-          fontWeight:
-          FontWeight.bold,
-        ),
-      ),
-
-      /// INPUT
-      inputDecorationTheme:
-      InputDecorationTheme(
-        filled: true,
-        fillColor: Colors.white,
-
-        hintStyle: TextStyle(
-          color:
-          Colors.grey.shade500,
-        ),
-
-        contentPadding:
-        const EdgeInsets.symmetric(
-          horizontal: 18,
-          vertical: 18,
-        ),
-
-        border:
-        OutlineInputBorder(
-          borderRadius:
-          BorderRadius.circular(
-            18,
-          ),
-          borderSide:
-          BorderSide.none,
-        ),
-
-        enabledBorder:
-        OutlineInputBorder(
-          borderRadius:
-          BorderRadius.circular(
-            18,
-          ),
-          borderSide:
-          BorderSide.none,
-        ),
-
-        focusedBorder:
-        OutlineInputBorder(
-          borderRadius:
-          BorderRadius.circular(
-            18,
-          ),
-          borderSide:
-          const BorderSide(
-            color: primary,
-            width: 1.3,
-          ),
-        ),
-      ),
-
-      /// BUTTONS
-      elevatedButtonTheme:
-      ElevatedButtonThemeData(
-        style:
-        ElevatedButton.styleFrom(
-          backgroundColor:
-          primary,
-          foregroundColor:
-          Colors.white,
-
-          elevation: 0,
-
-          minimumSize:
-          const Size(
-            double.infinity,
-            55,
-          ),
-
-          shape:
-          RoundedRectangleBorder(
-            borderRadius:
-            BorderRadius.circular(
-              18,
-            ),
-          ),
-        ),
-      ),
-
-      /// FAB
-      floatingActionButtonTheme:
-      const FloatingActionButtonThemeData(
-        backgroundColor:
-        primary,
-        foregroundColor:
-        Colors.white,
-      ),
-
-      /// CARD
-      cardTheme:
-      const CardThemeData(
-        elevation: 0,
-        color: Colors.white,
-        surfaceTintColor:
-        Colors.white,
-      ),
-
-      /// SNACKBAR
-      snackBarTheme:
-      SnackBarThemeData(
-        behavior:
-        SnackBarBehavior.floating,
-
-        shape:
-        RoundedRectangleBorder(
-          borderRadius:
-          BorderRadius.circular(
-            14,
-          ),
-        ),
-      ),
-
-      /// BOTTOM SHEET
-      bottomSheetTheme:
-      const BottomSheetThemeData(
-        backgroundColor:
-        Colors.white,
-        surfaceTintColor:
-        Colors.white,
-      ),
-    );
-  }
-
-  /// =======================================
-  /// UI
-  /// =======================================
+  // =========================================================
+  // DISPOSE
+  // =========================================================
 
   @override
-  Widget build(
-      BuildContext context,
-      ) {
-    return MaterialApp(
-      title: 'NIMO',
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    OnlineService.dispose();
+    super.dispose();
+  }
 
-      debugShowCheckedModeBanner:
-      false,
+  // =========================================================
+  // BUILD
+  // =========================================================
 
-      theme: buildTheme(),
+  @override
+  Widget build(BuildContext context) {
+    if (_hasError) {
+      return ErrorScreen(
+        message: _errorMessage,
+      );
+    }
 
-      /// KEYBOARD DISMISS
-      builder:
-          (context, child) {
-        return GestureDetector(
-          onTap: () {
-            FocusManager.instance
-                .primaryFocus
-                ?.unfocus();
-          },
-          child: child!,
-        );
-      },
+    if (!_initialized) {
+      return const SplashScreen();
+    }
 
-      /// START SCREEN
-      home: const SplashScreen(),
-
-      routes: {
-        '/auth': (_) =>
-        const AuthScreen(),
-
-        '/home': (_) =>
-        const HomeScreen(),
-      },
-    );
+    return const AuthGate();
   }
 }
 
-/// =======================================
-/// ❌ CONFIG ERROR APP
-/// =======================================
+// =========================================================
+// AUTH GATE
+// =========================================================
 
-class ConfigErrorApp
-    extends StatelessWidget {
-  const ConfigErrorApp({
-    super.key,
-  });
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
 
   @override
-  Widget build(
-      BuildContext context,
-      ) {
-    return MaterialApp(
-      debugShowCheckedModeBanner:
-      false,
+  Widget build(BuildContext context) {
+    try {
+      final session = Supabase
+          .instance.client.auth.currentSession;
 
-      home: Scaffold(
-        backgroundColor:
-        const Color(
-          0xFFF5F6FF,
-        ),
+      if (session != null) {
+        return const HomeScreen();
+      }
 
-        body: Center(
+      return const AuthScreen();
+    } catch (e) {
+      debugPrint('AUTH GATE ERROR: $e');
+      return const AuthScreen();
+    }
+  }
+}
+
+// =========================================================
+// ERROR SCREEN
+// =========================================================
+
+class ErrorScreen extends StatelessWidget {
+  final String message;
+
+  const ErrorScreen({
+    super.key,
+    required this.message,
+  });
+
+  static const Color primary =
+  Color(0xFF6C5CE7);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor:
+      const Color(0xFFF5F6FF),
+      body: SafeArea(
+        child: Center(
           child: Padding(
             padding:
-            const EdgeInsets.all(
-              24,
-            ),
+            const EdgeInsets.all(24),
             child: Container(
               padding:
-              const EdgeInsets.all(
-                24,
-              ),
-
-              decoration:
-              BoxDecoration(
+              const EdgeInsets.all(24),
+              decoration: BoxDecoration(
                 color: Colors.white,
-
                 borderRadius:
-                BorderRadius.circular(
-                  24,
-                ),
-
+                BorderRadius.circular(28),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black
-                        .withValues(
-                      alpha: 0.05,
-                    ),
-                    blurRadius: 15,
+                        .withAlpha(12),
+                    blurRadius: 20,
+                    offset:
+                    const Offset(0, 8),
                   ),
                 ],
               ),
-
               child: Column(
                 mainAxisSize:
                 MainAxisSize.min,
                 children: [
                   const Icon(
                     Icons.error_outline,
-                    size: 70,
+                    size: 64,
                     color: Colors.red,
                   ),
-
                   const SizedBox(
-                    height: 20,
+                    height: 16,
                   ),
-
                   const Text(
-                    'Configuration Error',
+                    'NIMO Failed to Start',
+                    textAlign:
+                    TextAlign.center,
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight:
                       FontWeight.bold,
+                      color: primary,
                     ),
                   ),
-
                   const SizedBox(
                     height: 12,
                   ),
-
                   Text(
-                    'Supabase credentials are missing.\n\nCheck your .env file.',
+                    message,
                     textAlign:
                     TextAlign.center,
                     style: TextStyle(
                       color: Colors
                           .grey.shade700,
-                      fontSize: 15,
-                    ),
-                  ),
-
-                  const SizedBox(
-                    height: 20,
-                  ),
-
-                  Container(
-                    width:
-                    double.infinity,
-
-                    padding:
-                    const EdgeInsets.all(
-                      16,
-                    ),
-
-                    decoration:
-                    BoxDecoration(
-                      color:
-                      const Color(
-                        0xFFF5F6FF,
-                      ),
-
-                      borderRadius:
-                      BorderRadius.circular(
-                        16,
-                      ),
-                    ),
-
-                    child: const Text(
-                      'Required:\n\nSUPABASE_URL\nSUPABASE_ANON_KEY',
-                      style: TextStyle(
-                        fontWeight:
-                        FontWeight.w600,
-                      ),
+                      height: 1.5,
                     ),
                   ),
                 ],
@@ -499,4 +320,135 @@ class ConfigErrorApp
       ),
     );
   }
+}
+
+// =========================================================
+// APP THEME
+// =========================================================
+
+ThemeData _buildTheme() {
+  const Color primary =
+  Color(0xFF6C5CE7);
+  const Color secondary =
+  Color(0xFF8E7BFF);
+  const Color background =
+  Color(0xFFF5F6FF);
+
+  final colorScheme =
+  ColorScheme.fromSeed(
+    seedColor: primary,
+    primary: primary,
+    secondary: secondary,
+    surface: Colors.white,
+  );
+
+  return ThemeData(
+    useMaterial3: true,
+    fontFamily: 'Roboto',
+    scaffoldBackgroundColor: background,
+    colorScheme: colorScheme,
+
+    appBarTheme: const AppBarTheme(
+      backgroundColor:
+      Colors.transparent,
+      elevation: 0,
+      centerTitle: false,
+      surfaceTintColor:
+      Colors.transparent,
+      iconTheme: IconThemeData(
+        color: Colors.black87,
+      ),
+      titleTextStyle: TextStyle(
+        color: Colors.black87,
+        fontSize: 28,
+        fontWeight: FontWeight.bold,
+      ),
+    ),
+
+    inputDecorationTheme:
+    InputDecorationTheme(
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding:
+      const EdgeInsets.symmetric(
+        horizontal: 18,
+        vertical: 16,
+      ),
+      hintStyle: TextStyle(
+        color: Colors.grey.shade500,
+      ),
+      border: OutlineInputBorder(
+        borderRadius:
+        BorderRadius.circular(18),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder:
+      OutlineInputBorder(
+        borderRadius:
+        BorderRadius.circular(18),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder:
+      OutlineInputBorder(
+        borderRadius:
+        BorderRadius.circular(18),
+        borderSide:
+        const BorderSide(
+          color: primary,
+          width: 1.4,
+        ),
+      ),
+    ),
+
+    elevatedButtonTheme:
+    ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: primary,
+        foregroundColor:
+        Colors.white,
+        minimumSize:
+        const Size.fromHeight(56),
+        elevation: 0,
+        shape:
+        RoundedRectangleBorder(
+          borderRadius:
+          BorderRadius.circular(18),
+        ),
+        textStyle: const TextStyle(
+          fontSize: 16,
+          fontWeight:
+          FontWeight.w600,
+        ),
+      ),
+    ),
+
+    floatingActionButtonTheme:
+    const FloatingActionButtonThemeData(
+      backgroundColor: primary,
+      foregroundColor: Colors.white,
+      elevation: 6,
+      shape: CircleBorder(),
+    ),
+
+    snackBarTheme:
+    SnackBarThemeData(
+      backgroundColor: primary,
+      contentTextStyle:
+      const TextStyle(
+        color: Colors.white,
+      ),
+      behavior:
+      SnackBarBehavior.floating,
+      shape:
+      RoundedRectangleBorder(
+        borderRadius:
+        BorderRadius.circular(14),
+      ),
+    ),
+
+    dividerTheme: DividerThemeData(
+      color: Colors.grey.shade200,
+      thickness: 1,
+    ),
+  );
 }

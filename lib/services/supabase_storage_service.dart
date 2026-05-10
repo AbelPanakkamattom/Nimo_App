@@ -1,458 +1,534 @@
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as path;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupabaseStorageService {
+  SupabaseStorageService._();
+
   static final SupabaseClient client =
       Supabase.instance.client;
 
-  static const String bucket =
-      'chat-files';
+  // =========================================================
+  // AUTH HELPERS
+  // =========================================================
 
-  /// =====================================
-  /// 📛 GENERATE FILE NAME
-  /// =====================================
+  static User? get currentUser =>
+      client.auth.currentUser;
 
-  static String generateFileName(
+  static String get myId =>
+      currentUser?.id ?? '';
+
+  static bool get isLoggedIn =>
+      currentUser != null &&
+          myId.isNotEmpty;
+
+  static void _ensureLoggedIn() {
+    if (!isLoggedIn) {
+      throw Exception('User not logged in.');
+    }
+  }
+
+  // =========================================================
+  // BUCKET NAMES
+  // =========================================================
+
+  static const String profileBucket = 'avatarz';
+  static const String imageBucket = 'message';
+  static const String audioBucket = 'audio';
+  static const String videoBucket = 'videos';
+  static const String documentBucket =
+      'documents';
+
+  // =========================================================
+  // MAX FILE SIZE (50 MB)
+  // =========================================================
+
+  static const int maxFileSize =
+      50 * 1024 * 1024;
+
+  // =========================================================
+  // EXTENSION GROUPS
+  // =========================================================
+
+  static const Set<String> _imageExtensions = {
+    'jpg',
+    'jpeg',
+    'png',
+    'gif',
+    'webp',
+    'bmp',
+  };
+
+  static const Set<String> _audioExtensions = {
+    'mp3',
+    'm4a',
+    'aac',
+    'wav',
+    'ogg',
+    'opus',
+    'amr',
+    '3gp',
+    'webm',
+  };
+
+  static const Set<String> _videoExtensions = {
+    'mp4',
+    'mov',
+    'avi',
+    'mkv',
+    'webm',
+    '3gp',
+  };
+
+  static const Set<String> _documentExtensions = {
+    'pdf',
+    'doc',
+    'docx',
+    'ppt',
+    'pptx',
+    'xls',
+    'xlsx',
+    'txt',
+    'csv',
+    'json',
+    'xml',
+    'zip',
+    'rar',
+    '7z',
+    'apk',
+    'dart',
+    'java',
+    'kt',
+    'js',
+    'ts',
+    'html',
+    'css',
+    'py',
+    'cpp',
+    'c',
+    'h',
+  };
+
+  // =========================================================
+  // BASIC HELPERS
+  // =========================================================
+
+  static String getExtension(File file) {
+    final extension = path
+        .extension(file.path)
+        .replaceFirst('.', '')
+        .toLowerCase();
+
+    return extension.isEmpty ? 'bin' : extension;
+  }
+
+  static Future<void> _ensureFileExists(
+      File file,
+      ) async {
+    final exists = await file.exists();
+
+    if (!exists) {
+      throw Exception('File does not exist.');
+    }
+  }
+
+  static Future<void> _validateSize(
+      File file,
+      ) async {
+    final size = await file.length();
+
+    if (size > maxFileSize) {
+      throw Exception(
+        'File is larger than 50 MB.',
+      );
+    }
+  }
+
+  static String _generateFileName(
       String extension,
       ) {
     final timestamp =
-        DateTime.now()
-            .millisecondsSinceEpoch;
+        DateTime.now().millisecondsSinceEpoch;
 
     final random =
-    Random.secure().nextInt(
-      999999999,
-    );
+    Random.secure().nextInt(999999999);
 
     return '${timestamp}_$random.$extension';
   }
 
-  /// =====================================
-  /// 📄 GET EXTENSION
-  /// =====================================
+  // =========================================================
+  // VALIDATION
+  // =========================================================
 
-  static String getExtension(
-      File file,
-      ) {
-    final name =
-        file.path.split('/').last;
-
-    if (!name.contains('.')) {
-      return 'jpg';
-    }
-
-    return name
-        .split('.')
-        .last
-        .toLowerCase();
-  }
-
-  /// =====================================
-  /// 🔐 VALIDATE FILE
-  /// =====================================
-
-  static void validateFile({
+  static void _validateExtension({
     required String extension,
     required String folder,
   }) {
-    if (folder == 'images') {
-      const allowed = [
-        'jpg',
-        'jpeg',
-        'png',
-        'webp',
-        'gif',
-      ];
+    Set<String> allowed;
 
-      if (!allowed.contains(
-        extension,
-      )) {
+    switch (folder) {
+      case 'profile':
+      case 'images':
+        allowed = _imageExtensions;
+        break;
+
+      case 'audio':
+        allowed = _audioExtensions;
+        break;
+
+      case 'videos':
+        allowed = _videoExtensions;
+        break;
+
+      case 'documents':
+        allowed = _documentExtensions;
+        break;
+
+      default:
         throw Exception(
-          'Invalid image format',
+          'Unknown folder: $folder',
         );
-      }
     }
 
-    if (folder == 'audio') {
-      const allowed = [
-        'aac',
-        'mp3',
-        'wav',
-        'm4a',
-        'ogg',
-      ];
-
-      if (!allowed.contains(
-        extension,
-      )) {
-        throw Exception(
-          'Invalid audio format',
-        );
-      }
-    }
-
-    if (folder == 'videos') {
-      const allowed = [
-        'mp4',
-        'mov',
-        'avi',
-        'mkv',
-      ];
-
-      if (!allowed.contains(
-        extension,
-      )) {
-        throw Exception(
-          'Invalid video format',
-        );
-      }
-    }
-
-    if (folder == 'documents') {
-      const allowed = [
-        'pdf',
-        'doc',
-        'docx',
-        'ppt',
-        'pptx',
-        'xls',
-        'xlsx',
-        'txt',
-      ];
-
-      if (!allowed.contains(
-        extension,
-      )) {
-        throw Exception(
-          'Invalid document format',
-        );
-      }
+    if (!allowed.contains(extension)) {
+      throw Exception(
+        'Unsupported .$extension file.',
+      );
     }
   }
 
-  /// =====================================
-  /// 🌐 MIME TYPE
-  /// =====================================
+  // =========================================================
+  // FOLDER -> BUCKET
+  // =========================================================
 
-  static String getMimeType({
-    required String extension,
-    required String folder,
-  }) {
-    if (folder == 'images') {
-      return {
-        'jpg': 'image/jpeg',
-        'jpeg': 'image/jpeg',
-        'png': 'image/png',
-        'webp': 'image/webp',
-        'gif': 'image/gif',
-      }[extension] ??
-          'image/jpeg';
-    }
-
-    if (folder == 'audio') {
-      return {
-        'aac': 'audio/aac',
-        'mp3': 'audio/mpeg',
-        'wav': 'audio/wav',
-        'm4a': 'audio/mp4',
-        'ogg': 'audio/ogg',
-      }[extension] ??
-          'audio/mpeg';
-    }
-
-    if (folder == 'videos') {
-      return {
-        'mp4': 'video/mp4',
-        'mov': 'video/quicktime',
-        'avi': 'video/x-msvideo',
-        'mkv': 'video/x-matroska',
-      }[extension] ??
-          'video/mp4';
-    }
-
-    if (folder == 'documents') {
-      return {
-        'pdf':
-        'application/pdf',
-        'doc':
-        'application/msword',
-        'docx':
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'ppt':
-        'application/vnd.ms-powerpoint',
-        'pptx':
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'xls':
-        'application/vnd.ms-excel',
-        'xlsx':
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'txt': 'text/plain',
-      }[extension] ??
-          'application/octet-stream';
-    }
-
-    return 'application/octet-stream';
-  }
-
-  /// =====================================
-  /// 🔗 PUBLIC URL
-  /// =====================================
-
-  static String getPublicUrl(
-      String path,
+  static String _bucketForFolder(
+      String folder,
       ) {
+    switch (folder) {
+      case 'profile':
+        return profileBucket;
+      case 'images':
+        return imageBucket;
+      case 'audio':
+        return audioBucket;
+      case 'videos':
+        return videoBucket;
+      case 'documents':
+        return documentBucket;
+      default:
+        throw Exception(
+          'Unknown folder: $folder',
+        );
+    }
+  }
+
+  // =========================================================
+  // MIME TYPES
+  // =========================================================
+
+  static String _mimeType(
+      String extension,
+      ) {
+    const map = <String, String>{
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'gif': 'image/gif',
+      'webp': 'image/webp',
+      'mp3': 'audio/mpeg',
+      'm4a': 'audio/mp4',
+      'wav': 'audio/wav',
+      'ogg': 'audio/ogg',
+      'mp4': 'video/mp4',
+      'mov': 'video/quicktime',
+      'pdf': 'application/pdf',
+      'txt': 'text/plain',
+      'doc': 'application/msword',
+      'docx':
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    };
+
+    return map[extension] ??
+        'application/octet-stream';
+  }
+
+  // =========================================================
+  // PUBLIC URL
+  // =========================================================
+
+  static String getPublicUrl({
+    required String bucket,
+    required String path,
+  }) {
     return client.storage
         .from(bucket)
         .getPublicUrl(path);
   }
 
-  /// =====================================
-  /// 📤 GENERIC UPLOAD
-  /// =====================================
+  // =========================================================
+  // MAIN UPLOAD
+  // =========================================================
 
   static Future<String> uploadFile({
     required File file,
     required String folder,
   }) async {
-    final user =
-        client.auth.currentUser;
+    _ensureLoggedIn();
 
-    if (user == null) {
-      throw Exception(
-        'User not logged in',
-      );
-    }
+    await _ensureFileExists(file);
+    await _validateSize(file);
+
+    final extension = getExtension(file);
+
+    _validateExtension(
+      extension: extension,
+      folder: folder,
+    );
+
+    final bucket = _bucketForFolder(folder);
+    final fileName =
+    _generateFileName(extension);
+
+    final storagePath =
+        '$myId/$folder/$fileName';
+
+    final contentType =
+    _mimeType(extension);
 
     try {
-      /// 📏 FILE SIZE
-      final size =
-      await file.length();
-
-      /// 50MB LIMIT
-      if (size >
-          50 * 1024 * 1024) {
-        throw Exception(
-          'File too large (Max 50MB)',
-        );
-      }
-
-      /// 📄 EXTENSION
-      final extension =
-      getExtension(file);
-
-      /// 🔐 VALIDATE
-      validateFile(
-        extension: extension,
-        folder: folder,
+      debugPrint(
+        'Uploading to $bucket/$storagePath',
       );
 
-      /// 📛 FILE NAME
-      final fileName =
-      generateFileName(
-        extension,
-      );
-
-      /// 📁 STORAGE PATH
-      final path =
-          '${user.id}/$folder/$fileName';
-
-      /// 📤 UPLOAD
       await client.storage
           .from(bucket)
           .upload(
-        path,
+        storagePath,
         file,
-        fileOptions:
-        FileOptions(
-          upsert: false,
-          contentType:
-          getMimeType(
-            extension:
-            extension,
-            folder: folder,
-          ),
+        fileOptions: FileOptions(
+          upsert: true,
+          contentType: contentType,
         ),
       );
 
-      /// 🔗 PUBLIC URL
-      final url =
-      getPublicUrl(path);
+      final url = getPublicUrl(
+        bucket: bucket,
+        path: storagePath,
+      );
 
-      /// 🔄 CACHE BREAKER
       return '$url?t=${DateTime.now().millisecondsSinceEpoch}';
     } on StorageException catch (e) {
+      debugPrint(
+        'UPLOAD ERROR: ${e.message}',
+      );
+
       throw Exception(
-        'Storage error: ${e.message}',
+        'Upload failed: ${e.message}',
       );
     } catch (e) {
-      throw Exception(
-        'Upload failed: $e',
-      );
+      debugPrint('UPLOAD ERROR: $e');
+      throw Exception('Upload failed.');
     }
   }
 
-  /// =====================================
-  /// 📸 IMAGE UPLOAD
-  /// =====================================
+  // =========================================================
+  // CHAT MEDIA UPLOAD
+  // Used by ChatDetailScreen
+  // =========================================================
 
-  static Future<String>
-  uploadImage(
-      File file,
-      ) async {
-    return uploadFile(
-      file: file,
-      folder: 'images',
+  static Future<String> uploadChatMedia({
+    required File file,
+    required String bucket,
+    String? folder,
+  }) async {
+    _ensureLoggedIn();
+
+    await _ensureFileExists(file);
+    await _validateSize(file);
+
+    final extension = getExtension(file);
+
+    // Determine logical folder
+    String logicalFolder;
+
+    switch (bucket) {
+      case profileBucket:
+        logicalFolder = 'profile';
+        break;
+      case imageBucket:
+        logicalFolder = 'images';
+        break;
+      case audioBucket:
+        logicalFolder = 'audio';
+        break;
+      case videoBucket:
+        logicalFolder = 'videos';
+        break;
+      case documentBucket:
+        logicalFolder = 'documents';
+        break;
+      default:
+        throw Exception(
+          'Unknown bucket: $bucket',
+        );
+    }
+
+    _validateExtension(
+      extension: extension,
+      folder: logicalFolder,
     );
+
+    final fileName =
+    _generateFileName(extension);
+
+    final subfolder =
+    (folder != null &&
+        folder.trim().isNotEmpty)
+        ? folder.trim()
+        : logicalFolder;
+
+    final storagePath =
+        '$myId/$subfolder/$fileName';
+
+    final contentType =
+    _mimeType(extension);
+
+    try {
+      debugPrint(
+        'Uploading to $bucket/$storagePath',
+      );
+
+      await client.storage
+          .from(bucket)
+          .upload(
+        storagePath,
+        file,
+        fileOptions: FileOptions(
+          upsert: true,
+          contentType: contentType,
+        ),
+      );
+
+      final url = client.storage
+          .from(bucket)
+          .getPublicUrl(storagePath);
+
+      return '$url?t=${DateTime.now().millisecondsSinceEpoch}';
+    } on StorageException catch (e) {
+      debugPrint(
+        'CHAT MEDIA ERROR: ${e.message}',
+      );
+
+      throw Exception(
+        'Upload failed: ${e.message}',
+      );
+    } catch (e) {
+      debugPrint(
+        'CHAT MEDIA ERROR: $e',
+      );
+
+      throw Exception('Upload failed.');
+    }
   }
 
-  /// =====================================
-  /// 🎤 AUDIO UPLOAD
-  /// =====================================
+  // =========================================================
+  // CONVENIENCE METHODS
+  // =========================================================
 
-  static Future<String>
-  uploadAudio(
+  static Future<String> uploadProfilePhoto(
       File file,
-      ) async {
-    return uploadFile(
-      file: file,
-      folder: 'audio',
-    );
-  }
-
-  /// =====================================
-  /// 🎥 VIDEO UPLOAD
-  /// =====================================
-
-  static Future<String>
-  uploadVideo(
-      File file,
-      ) async {
-    return uploadFile(
-      file: file,
-      folder: 'videos',
-    );
-  }
-
-  /// =====================================
-  /// 📄 DOCUMENT UPLOAD
-  /// =====================================
-
-  static Future<String>
-  uploadDocument(
-      File file,
-      ) async {
-    return uploadFile(
-      file: file,
-      folder: 'documents',
-    );
-  }
-
-  /// =====================================
-  /// 👤 PROFILE PHOTO
-  /// =====================================
-
-  static Future<String>
-  uploadProfilePhoto(
-      File file,
-      ) async {
+      ) {
     return uploadFile(
       file: file,
       folder: 'profile',
     );
   }
 
-  /// =====================================
-  /// 🗑 DELETE FILE
-  /// =====================================
+  static Future<String> uploadImage(
+      File file,
+      ) {
+    return uploadFile(
+      file: file,
+      folder: 'images',
+    );
+  }
 
-  static Future<void> deleteFile(
-      String url,
-      ) async {
+  static Future<String> uploadAudio(
+      File file,
+      ) {
+    return uploadFile(
+      file: file,
+      folder: 'audio',
+    );
+  }
+
+  static Future<String> uploadVideo(
+      File file,
+      ) {
+    return uploadFile(
+      file: file,
+      folder: 'videos',
+    );
+  }
+
+  static Future<String> uploadDocument(
+      File file,
+      ) {
+    return uploadFile(
+      file: file,
+      folder: 'documents',
+    );
+  }
+
+  // =========================================================
+  // DELETE FILE
+  // =========================================================
+
+  static Future<void> deleteFile({
+    required String bucket,
+    required String path,
+  }) async {
     try {
-      final uri = Uri.parse(url);
-
-      final cleanPath =
-          uri.path.split('?').first;
-
-      final segments =
-      cleanPath.split('/');
-
-      final bucketIndex =
-      segments.indexOf(
-        bucket,
-      );
-
-      if (bucketIndex == -1 ||
-          bucketIndex + 1 >=
-              segments.length) {
-        throw Exception(
-          'Invalid file path',
-        );
-      }
-
-      final path = segments
-          .sublist(
-        bucketIndex + 1,
-      )
-          .join('/');
-
       await client.storage
           .from(bucket)
           .remove([path]);
     } on StorageException catch (e) {
       throw Exception(
-        'Delete error: ${e.message}',
+        'Delete failed: ${e.message}',
       );
-    } catch (e) {
-      throw Exception(
-        'Delete failed: $e',
-      );
+    } catch (_) {
+      throw Exception('Delete failed.');
     }
   }
 
-  /// =====================================
-  /// 🧹 DELETE USER FILES
-  /// =====================================
+  // =========================================================
+  // EXTRACT STORAGE PATH FROM URL
+  // =========================================================
 
-  static Future<void>
-  deleteUserFiles() async {
-    final user =
-        client.auth.currentUser;
-
-    if (user == null) return;
-
+  static String? extractPathFromUrl(
+      String url,
+      ) {
     try {
-      final folders = [
-        'images',
-        'audio',
-        'videos',
-        'documents',
-        'profile',
-      ];
+      final uri = Uri.parse(url);
+      final segments = uri.pathSegments;
 
-      for (final folder
-      in folders) {
-        final files = await client
-            .storage
-            .from(bucket)
-            .list(
-          path:
-          '${user.id}/$folder',
-        );
+      final objectIndex =
+      segments.indexOf('object');
 
-        final paths =
-        files.map((file) {
-          return '${user.id}/$folder/${file.name}';
-        }).toList();
-
-        if (paths.isNotEmpty) {
-          await client.storage
-              .from(bucket)
-              .remove(paths);
-        }
+      if (objectIndex == -1 ||
+          objectIndex + 2 >=
+              segments.length) {
+        return null;
       }
-    } catch (_) {}
+
+      return segments
+          .sublist(objectIndex + 2)
+          .join('/');
+    } catch (_) {
+      return null;
+    }
   }
 }

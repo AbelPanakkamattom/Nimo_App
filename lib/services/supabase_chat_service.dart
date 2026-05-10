@@ -1,473 +1,402 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/message_model.dart';
 
 class SupabaseChatService {
-  static final SupabaseClient _client =
-      Supabase.instance.client;
+  SupabaseChatService._();
 
-  /// =====================================
-  /// 👤 CURRENT USER
-  /// =====================================
+  static final SupabaseClient _client = Supabase.instance.client;
 
-  static User? get currentUser =>
-      _client.auth.currentUser;
+  // =========================================================
+  // AUTH HELPERS
+  // =========================================================
 
-  static String get myId =>
-      currentUser?.id ?? '';
+  static User? get currentUser => _client.auth.currentUser;
 
-  /// =====================================
-  /// 📤 SEND MESSAGE
-  /// =====================================
+  static String get myId => currentUser?.id ?? '';
+
+  static bool get isLoggedIn => currentUser != null && myId.isNotEmpty;
+
+  static void _ensureLoggedIn() {
+    if (!isLoggedIn) {
+      throw Exception('User not logged in.');
+    }
+  }
+
+  // =========================================================
+  // SEND MESSAGE
+  // =========================================================
 
   static Future<void> sendMessage({
     required String receiverId,
     required String content,
     String type = 'text',
     String? replyToMessageId,
+    String? mediaUrl,
+    String? fileName,
+    int? fileSize,
+    String? mimeType,
   }) async {
-    if (currentUser == null) {
-      throw Exception(
-        'User not logged in',
-      );
-    }
+    _ensureLoggedIn();
 
+    final receiver = receiverId.trim();
     final text = content.trim();
 
-    if (text.isEmpty) return;
+    if (receiver.isEmpty) {
+      throw Exception('Receiver ID is empty.');
+    }
+
+    final hasText = text.isNotEmpty;
+    final hasMedia = mediaUrl != null && mediaUrl.trim().isNotEmpty;
+
+    if (!hasText && !hasMedia) {
+      throw Exception('Message is empty.');
+    }
+
+    final blocked = await isBlocked(receiver);
+    if (blocked) {
+      throw Exception('You have blocked this user.');
+    }
+
+    final payload = <String, dynamic>{
+      'sender_id': myId,
+      'receiver_id': receiver,
+      'content': hasText ? text : '',
+      'type': type,
+      'status': MessageStatus.sent.name,
+      'deleted': false,
+      'is_seen': false,
+      'created_at': DateTime.now().toUtc().toIso8601String(),
+    };
+
+    if (replyToMessageId != null &&
+        replyToMessageId.trim().isNotEmpty) {
+      payload['reply_to'] = replyToMessageId.trim();
+    }
+
+    if (hasMedia) {
+      payload['media_url'] = mediaUrl.trim();
+      payload['file_url'] = mediaUrl.trim();
+    }
+
+    if (fileName != null && fileName.trim().isNotEmpty) {
+      payload['file_name'] = fileName.trim();
+    }
+
+    if (fileSize != null) {
+      payload['file_size'] = fileSize;
+    }
+
+    if (mimeType != null && mimeType.trim().isNotEmpty) {
+      payload['mime_type'] = mimeType.trim();
+    }
 
     try {
-      await _client
-          .from('messages')
-          .insert({
-        'sender_id': myId,
-        'receiver_id': receiverId,
-        'content': text,
-        'type': type,
-        'status':
-        MessageStatus.sent.name,
-        'reply_to':
-        replyToMessageId,
-        'deleted': false,
-        'created_at':
-        DateTime.now()
-            .toUtc()
-            .toIso8601String(),
-      });
+      await _client.from('messages').insert(payload);
+    } on PostgrestException catch (e) {
+      debugPrint('SEND MESSAGE ERROR: ${e.message}');
+      throw Exception(e.message);
     } catch (e) {
-      throw Exception(
-        'Send failed: $e',
-      );
+      debugPrint('SEND MESSAGE ERROR: $e');
+      throw Exception('Failed to send message.');
     }
   }
 
-  /// =====================================
-  /// 💬 CHAT STREAM
-  /// =====================================
+  // =========================================================
+  // REAL-TIME CHAT STREAM
+  // =========================================================
 
-  static Stream<List<Message>> getChat(
-      String otherUserId,
-      ) {
+  static Stream<List<Message>> getChat(String otherUserId) {
+    if (!isLoggedIn || otherUserId.trim().isEmpty) {
+      return Stream.value(<Message>[]);
+    }
+
     return _client
         .from('messages')
         .stream(primaryKey: ['id'])
+        .order('created_at')
         .map((rows) {
       try {
-        final filtered =
-        rows.where((msg) {
-          return (msg['sender_id'] ==
-              myId &&
-              msg['receiver_id'] ==
-                  otherUserId) ||
-              (msg['sender_id'] ==
-                  otherUserId &&
-                  msg['receiver_id'] ==
-                      myId);
-        }).toList();
+        final messages = rows
+            .where((row) {
+          final sender = row['sender_id']?.toString() ?? '';
+          final receiver = row['receiver_id']?.toString() ?? '';
 
-        /// REMOVE DUPLICATES
-        final Map<String, dynamic>
-        unique = {};
-
-        for (final item
-        in filtered) {
-          unique[item['id']
-              .toString()] =
-              item;
-        }
-
-        final parsed = unique.values
+          return (sender == myId &&
+              receiver == otherUserId) ||
+              (sender == otherUserId &&
+                  receiver == myId);
+        })
             .map(
-              (e) => Message.fromJson(
-            Map<String, dynamic>.from(
-              e,
-            ),
+              (row) => Message.fromJson(
+            Map<String, dynamic>.from(row),
           ),
         )
             .toList();
 
-        /// SORT ASC
-        parsed.sort(
-              (a, b) => a.createdAt
-              .compareTo(
-            b.createdAt,
-          ),
+        messages.sort(
+              (a, b) => a.createdAt.compareTo(b.createdAt),
         );
 
-        /// AUTO STATUS
-        _autoDelivered(
-          parsed,
-          otherUserId,
-        );
+        _autoMarkDelivered(messages, otherUserId);
+        _autoMarkSeen(messages, otherUserId);
 
-        _autoSeen(
-          parsed,
-          otherUserId,
-        );
-
-        return parsed;
-      } catch (_) {
-        return [];
+        return messages;
+      } catch (e) {
+        debugPrint('GET CHAT ERROR: $e');
+        return <Message>[];
       }
     });
   }
 
-  /// =====================================
-  /// 👀 MARK SEEN
-  /// =====================================
+  // =========================================================
+  // MARK DELIVERED
+  // =========================================================
+
+  static Future<void> markAsDelivered(
+      String otherUserId,
+      ) async {
+    if (!isLoggedIn) return;
+
+    try {
+      await _client
+          .from('messages')
+          .update({
+        'status': MessageStatus.delivered.name,
+      })
+          .eq('sender_id', otherUserId)
+          .eq('receiver_id', myId)
+          .eq('status', MessageStatus.sent.name);
+    } catch (e) {
+      debugPrint('MARK DELIVERED ERROR: $e');
+    }
+  }
+
+  // =========================================================
+  // MARK SEEN
+  // =========================================================
 
   static Future<void> markAsSeen(
       String otherUserId,
       ) async {
+    if (!isLoggedIn) return;
+
     try {
       await _client
           .from('messages')
           .update({
-        'status':
-        MessageStatus.seen.name,
+        'status': MessageStatus.seen.name,
+        'is_seen': true,
       })
-          .eq(
-        'sender_id',
-        otherUserId,
-      )
-          .eq(
-        'receiver_id',
-        myId,
-      )
-          .neq(
-        'status',
-        MessageStatus.seen.name,
-      );
-    } catch (_) {}
+          .eq('sender_id', otherUserId)
+          .eq('receiver_id', myId)
+          .neq('status', MessageStatus.seen.name);
+    } catch (e) {
+      debugPrint('MARK SEEN ERROR: $e');
+    }
   }
 
-  /// =====================================
-  /// 🚚 MARK DELIVERED
-  /// =====================================
-
-  static Future<void>
-  markAsDelivered(
-      String otherUserId,
-      ) async {
-    try {
-      await _client
-          .from('messages')
-          .update({
-        'status':
-        MessageStatus
-            .delivered
-            .name,
-      })
-          .eq(
-        'sender_id',
-        otherUserId,
-      )
-          .eq(
-        'receiver_id',
-        myId,
-      )
-          .eq(
-        'status',
-        MessageStatus.sent.name,
-      );
-    } catch (_) {}
-  }
-
-  /// =====================================
-  /// ⚡ AUTO DELIVERED
-  /// =====================================
-
-  static void _autoDelivered(
+  static void _autoMarkDelivered(
       List<Message> messages,
       String otherUserId,
       ) {
-    final hasPending =
-    messages.any(
-          (m) =>
-      m.senderId ==
-          otherUserId &&
-          m.receiverId == myId &&
-          m.status ==
-              MessageStatus.sent,
+    final hasPending = messages.any(
+          (message) =>
+      message.senderId == otherUserId &&
+          message.receiverId == myId &&
+          message.status == MessageStatus.sent,
     );
 
     if (hasPending) {
-      markAsDelivered(
-        otherUserId,
-      );
+      markAsDelivered(otherUserId);
     }
   }
 
-  /// =====================================
-  /// 👀 AUTO SEEN
-  /// =====================================
-
-  static void _autoSeen(
+  static void _autoMarkSeen(
       List<Message> messages,
       String otherUserId,
       ) {
-    final hasUnseen =
-    messages.any(
-          (m) =>
-      m.senderId ==
-          otherUserId &&
-          m.receiverId == myId &&
-          m.status !=
-              MessageStatus.seen,
+    final hasUnseen = messages.any(
+          (message) =>
+      message.senderId == otherUserId &&
+          message.receiverId == myId &&
+          message.status != MessageStatus.seen,
     );
 
     if (hasUnseen) {
-      markAsSeen(
-        otherUserId,
-      );
+      markAsSeen(otherUserId);
     }
   }
 
-  /// =====================================
-  /// 🗑 DELETE MESSAGE
-  /// =====================================
+  // =========================================================
+  // DELETE MESSAGE
+  // =========================================================
 
-  static Future<void>
-  deleteMessage(
+  static Future<void> deleteMessage(
       String messageId,
       ) async {
     try {
       await _client
           .from('messages')
           .delete()
-          .eq(
-        'id',
-        messageId,
-      );
-    } catch (e) {
-      throw Exception(
-        'Delete failed: $e',
-      );
+          .eq('id', messageId);
+    } catch (_) {
+      throw Exception('Failed to delete message.');
     }
   }
 
-  /// =====================================
-  /// 🚫 DELETE FOR EVERYONE
-  /// =====================================
-
-  static Future<void>
-  deleteForEveryone(
+  static Future<void> deleteForEveryone(
       String messageId,
       ) async {
     try {
       await _client
           .from('messages')
           .update({
-        'content':
-        '🚫 This message was deleted',
+        'content': '🚫 This message was deleted',
         'deleted': true,
       })
-          .eq(
-        'id',
-        messageId,
-      );
-    } catch (_) {}
+          .eq('id', messageId);
+    } catch (e) {
+      debugPrint('DELETE FOR EVERYONE ERROR: $e');
+    }
   }
 
-  /// =====================================
-  /// ✍️ SET TYPING
-  /// =====================================
+  // =========================================================
+  // TYPING STATUS
+  // =========================================================
 
   static Future<void> setTyping({
     required String receiverId,
     required bool isTyping,
   }) async {
+    if (!isLoggedIn || receiverId.trim().isEmpty) {
+      return;
+    }
+
     try {
       await _client
           .from('typing_status')
           .upsert({
         'user_id': myId,
-        'receiver_id':
-        receiverId,
-        'is_typing':
-        isTyping,
+        'receiver_id': receiverId,
+        'is_typing': isTyping,
         'updated_at':
-        DateTime.now()
-            .toUtc()
-            .toIso8601String(),
+        DateTime.now().toUtc().toIso8601String(),
       });
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('SET TYPING ERROR: $e');
+    }
   }
-
-  /// =====================================
-  /// ✍️ TYPING STREAM
-  /// =====================================
 
   static Stream<bool> typingStream(
       String otherUserId,
       ) {
+    if (!isLoggedIn) {
+      return Stream.value(false);
+    }
+
     return _client
         .from('typing_status')
         .stream(
-      primaryKey: ['user_id'],
+      primaryKey: ['user_id', 'receiver_id'],
     )
         .map((rows) {
       try {
-        final data =
-        rows.firstWhere(
-              (e) =>
-          e['user_id'] ==
-              otherUserId &&
-              e['receiver_id'] ==
-                  myId,
+        final row = rows.firstWhere(
+              (item) =>
+          item['user_id'] == otherUserId &&
+              item['receiver_id'] == myId,
         );
 
-        return data['is_typing'] ==
-            true;
+        return row['is_typing'] == true;
       } catch (_) {
         return false;
       }
-    });
+    })
+        .distinct();
   }
 
-  /// =====================================
-  /// 🟢 ONLINE STATUS
-  /// =====================================
+  // =========================================================
+  // ONLINE STATUS
+  // =========================================================
 
-  static Future<void>
-  setOnlineStatus(
+  static Future<void> setOnlineStatus(
       bool online,
       ) async {
+    if (!isLoggedIn) return;
+
     try {
       await _client
           .from('profiles')
           .update({
         'is_online': online,
         'last_seen':
-        DateTime.now()
-            .toUtc()
-            .toIso8601String(),
+        DateTime.now().toUtc().toIso8601String(),
       })
           .eq('id', myId);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('ONLINE STATUS ERROR: $e');
+    }
   }
 
-  /// =====================================
-  /// 🟢 USER STATUS STREAM
-  /// =====================================
-
-  static Stream<
-      Map<String, dynamic>>
-  userStatusStream(
-      String userId,
-      ) {
+  static Stream<Map<String, dynamic>>
+  userStatusStream(String userId) {
     return _client
         .from('profiles')
         .stream(primaryKey: ['id'])
+        .eq('id', userId)
         .map((rows) {
-      try {
-        final user =
-        rows.firstWhere(
-              (e) => e['id'] == userId,
-        );
-
-        return {
-          'online':
-          user['is_online'] ??
-              false,
-          'last_seen':
-          user['last_seen'],
-        };
-      } catch (_) {
+      if (rows.isEmpty) {
         return {
           'online': false,
           'last_seen': null,
         };
       }
+
+      final profile = rows.first;
+
+      return {
+        'online': profile['is_online'] == true,
+        'last_seen': profile['last_seen'],
+      };
     });
   }
 
-  /// =====================================
-  /// 🔴 UNREAD COUNT
-  /// =====================================
+  // =========================================================
+  // UNREAD COUNT
+  // =========================================================
 
-  static Stream<int>
-  unreadCountStream(
+  static Stream<int> unreadCountStream(
       String otherUserId,
       ) {
+    if (!isLoggedIn) {
+      return Stream.value(0);
+    }
+
     return _client
         .from('messages')
         .stream(primaryKey: ['id'])
         .map((rows) {
-      return rows.where((m) {
-        return m['sender_id'] ==
-            otherUserId &&
-            m['receiver_id'] ==
-                myId &&
-            m['status'] != 'seen';
+      return rows.where((row) {
+        return row['sender_id'] == otherUserId &&
+            row['receiver_id'] == myId &&
+            row['status'] != MessageStatus.seen.name;
       }).length;
     });
   }
 
-  /// =====================================
-  /// 📌 PIN CHAT
-  /// =====================================
-
-  static Future<void> pinChat({
-    required String otherUserId,
-  }) async {
-    try {
-      await _client
-          .from('pinned_chats')
-          .upsert({
-        'user_id': myId,
-        'chat_user_id':
-        otherUserId,
-      });
-    } catch (_) {}
-  }
-
-  /// =====================================
-  /// 📦 ARCHIVE CHAT
-  /// =====================================
-
-  static Future<void>
-  archiveChat({
-    required String otherUserId,
-  }) async {
-    try {
-      await _client
-          .from('archived_chats')
-          .upsert({
-        'user_id': myId,
-        'chat_user_id':
-        otherUserId,
-      });
-    } catch (_) {}
-  }
-
-  /// =====================================
-  /// 🚫 BLOCK USER
-  /// =====================================
+  // =========================================================
+  // BLOCK USERS
+  // =========================================================
 
   static Future<void> blockUser({
     required String blockedId,
   }) async {
+    if (!isLoggedIn || blockedId.trim().isEmpty) {
+      return;
+    }
+
     try {
       await _client
           .from('blocked_users')
@@ -475,31 +404,47 @@ class SupabaseChatService {
         'blocker_id': myId,
         'blocked_id': blockedId,
       });
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('BLOCK USER ERROR: $e');
+    }
   }
 
-  /// =====================================
-  /// ✅ CHECK BLOCK
-  /// =====================================
+  static Future<void> unblockUser(
+      String blockedId,
+      ) async {
+    if (!isLoggedIn || blockedId.trim().isEmpty) {
+      return;
+    }
+
+    try {
+      await _client
+          .from('blocked_users')
+          .delete()
+          .match({
+        'blocker_id': myId,
+        'blocked_id': blockedId,
+      });
+    } catch (e) {
+      debugPrint('UNBLOCK USER ERROR: $e');
+    }
+  }
 
   static Future<bool> isBlocked(
       String otherUserId,
       ) async {
+    if (!isLoggedIn || otherUserId.trim().isEmpty) {
+      return false;
+    }
+
     try {
-      final data = await _client
+      final result = await _client
           .from('blocked_users')
           .select()
-          .eq(
-        'blocker_id',
-        myId,
-      )
-          .eq(
-        'blocked_id',
-        otherUserId,
-      )
+          .eq('blocker_id', myId)
+          .eq('blocked_id', otherUserId)
           .maybeSingle();
 
-      return data != null;
+      return result != null;
     } catch (_) {
       return false;
     }

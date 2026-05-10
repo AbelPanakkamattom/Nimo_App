@@ -4,281 +4,238 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class OnlineService {
+  OnlineService._();
+
   static final SupabaseClient supabase =
       Supabase.instance.client;
 
   static Timer? _heartbeatTimer;
 
-  /// =========================
-  /// CURRENT USER
-  /// =========================
+  /// Update online status every 30 seconds while app is active.
+  static const Duration heartbeatInterval =
+  Duration(seconds: 30);
 
-  static String? get currentUserId =>
-      supabase.auth.currentUser?.id;
+  // ==========================================
+  // CURRENT USER
+  // ==========================================
 
-  /// =========================
-  /// SET ONLINE
-  /// =========================
+  static String get currentUserId =>
+      supabase.auth.currentUser?.id ?? '';
 
-  static Future<void> setOnline(
-      bool online,
-      ) async {
+  static bool get isLoggedIn =>
+      currentUserId.isNotEmpty;
+
+  // ==========================================
+  // SET ONLINE
+  // ==========================================
+
+  static Future<void> setOnline() async {
+    if (!isLoggedIn) return;
+
     try {
-      final userId = currentUserId;
-
-      if (userId == null) {
-        return;
-      }
-
-      await supabase
-          .from('profiles')
-          .update({
-        'is_online': online,
-        'last_seen':
-        DateTime.now()
-            .toIso8601String(),
-      }).eq('id', userId);
-    } catch (e) {
-      debugPrint(
-        "SET ONLINE ERROR: $e",
-      );
-    }
-  }
-
-  /// =========================
-  /// START HEARTBEAT
-  /// =========================
-
-  static void startHeartbeat() {
-    _heartbeatTimer?.cancel();
-
-    _heartbeatTimer = Timer.periodic(
-      const Duration(seconds: 20),
-          (_) async {
-        await refreshOnline();
-      },
-    );
-  }
-
-  /// =========================
-  /// STOP HEARTBEAT
-  /// =========================
-
-  static void stopHeartbeat() {
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
-  }
-
-  /// =========================
-  /// REFRESH ONLINE
-  /// =========================
-
-  static Future<void>
-  refreshOnline() async {
-    try {
-      final userId = currentUserId;
-
-      if (userId == null) {
-        return;
-      }
-
       await supabase
           .from('profiles')
           .update({
         'is_online': true,
         'last_seen':
         DateTime.now()
+            .toUtc()
             .toIso8601String(),
-      }).eq('id', userId);
+      })
+          .eq('id', currentUserId);
+
+      _startHeartbeat();
     } catch (e) {
       debugPrint(
-        "REFRESH ONLINE ERROR: $e",
+        'SET ONLINE ERROR: $e',
       );
     }
   }
 
-  /// =========================
-  /// USER ONLINE STREAM
-  /// =========================
+  // ==========================================
+  // SET OFFLINE
+  // ==========================================
 
-  static Stream<bool> onlineStream(
-      String userId,
-      ) {
-    return supabase
-        .from('profiles')
-        .stream(primaryKey: ['id'])
-        .map((profiles) {
-      try {
-        final profile =
-        profiles.firstWhere(
-              (p) => p['id'] == userId,
-        );
+  static Future<void> setOffline() async {
+    _stopHeartbeat();
 
-        return profile[
-        'is_online'] ==
-            true;
-      } catch (_) {
-        return false;
-      }
-    });
-  }
+    if (!isLoggedIn) return;
 
-  /// =========================
-  /// LAST SEEN STREAM
-  /// =========================
-
-  static Stream<String>
-  lastSeenStream(
-      String userId,
-      ) {
-    return supabase
-        .from('profiles')
-        .stream(primaryKey: ['id'])
-        .map((profiles) {
-      try {
-        final profile =
-        profiles.firstWhere(
-              (p) => p['id'] == userId,
-        );
-
-        final online =
-            profile['is_online'] ==
-                true;
-
-        if (online) {
-          return "online";
-        }
-
-        final lastSeen =
-        profile['last_seen'];
-
-        if (lastSeen == null) {
-          return "offline";
-        }
-
-        return formatLastSeen(
-          lastSeen,
-        );
-      } catch (_) {
-        return "offline";
-      }
-    });
-  }
-
-  /// =========================
-  /// FORMAT LAST SEEN
-  /// =========================
-
-  static String formatLastSeen(
-      String time,
-      ) {
     try {
-      final date =
-      DateTime.parse(time)
-          .toLocal();
-
-      final now = DateTime.now();
-
-      final difference =
-      now.difference(date);
-
-      if (difference.inSeconds <
-          60) {
-        return "last seen just now";
-      }
-
-      if (difference.inMinutes <
-          60) {
-        return "last seen ${difference.inMinutes} min ago";
-      }
-
-      if (difference.inHours < 24) {
-        return "last seen ${difference.inHours} hr ago";
-      }
-
-      return "last seen ${date.day}/${date.month}/${date.year}";
-    } catch (_) {
-      return "offline";
-    }
-  }
-
-  /// =========================
-  /// TYPING STATUS
-  /// =========================
-
-  static Future<void> setTyping({
-    required String receiverId,
-    required bool typing,
-  }) async {
-    try {
-      final userId = currentUserId;
-
-      if (userId == null) {
-        return;
-      }
-
       await supabase
           .from('profiles')
           .update({
-        'typing_to':
-        typing ? receiverId : '',
-      }).eq('id', userId);
+        'is_online': false,
+        'last_seen':
+        DateTime.now()
+            .toUtc()
+            .toIso8601String(),
+      })
+          .eq('id', currentUserId);
     } catch (e) {
       debugPrint(
-        "TYPING ERROR: $e",
+        'SET OFFLINE ERROR: $e',
       );
     }
   }
 
-  /// =========================
-  /// TYPING STREAM
-  /// =========================
+  // ==========================================
+  // HEARTBEAT
+  // ==========================================
 
-  static Stream<bool> typingStream({
-    required String otherUserId,
-  }) {
-    final myId = currentUserId;
+  static void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+
+    _heartbeatTimer = Timer.periodic(
+      heartbeatInterval,
+          (_) async {
+        if (!isLoggedIn) {
+          _stopHeartbeat();
+          return;
+        }
+
+        try {
+          await supabase
+              .from('profiles')
+              .update({
+            'is_online': true,
+            'last_seen':
+            DateTime.now()
+                .toUtc()
+                .toIso8601String(),
+          })
+              .eq(
+            'id',
+            currentUserId,
+          );
+        } catch (e) {
+          debugPrint(
+            'ONLINE HEARTBEAT ERROR: $e',
+          );
+        }
+      },
+    );
+  }
+
+  static void _stopHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+  }
+
+  // ==========================================
+  // USER STATUS STREAM
+  // ==========================================
+
+  static Stream<
+      Map<String, dynamic>>
+  userStatusStream(
+      String userId,
+      ) {
+    if (userId.trim().isEmpty) {
+      return Stream.value({
+        'online': false,
+        'last_seen': null,
+      });
+    }
 
     return supabase
         .from('profiles')
-        .stream(primaryKey: ['id'])
+        .stream(
+      primaryKey: ['id'],
+    )
+        .eq('id', userId)
         .map((profiles) {
       try {
+        if (profiles.isEmpty) {
+          return {
+            'online': false,
+            'last_seen': null,
+          };
+        }
+
         final profile =
-        profiles.firstWhere(
-              (p) =>
-          p['id'] ==
-              otherUserId,
+            profiles.first;
+
+        return {
+          'online':
+          profile['is_online'] ==
+              true,
+          'last_seen':
+          profile['last_seen'],
+        };
+      } catch (e) {
+        debugPrint(
+          'STATUS STREAM ERROR: $e',
         );
 
-        return profile[
-        'typing_to'] ==
-            myId;
-      } catch (_) {
-        return false;
+        return {
+          'online': false,
+          'last_seen': null,
+        };
       }
     });
   }
 
-  /// =========================
-  /// APP START
-  /// =========================
+  // ==========================================
+  // SIMPLE ONLINE STREAM
+  // ==========================================
 
-  static Future<void> start()
-  async {
-    await setOnline(true);
-
-    startHeartbeat();
+  static Stream<bool> isOnlineStream(
+      String userId,
+      ) {
+    return userStatusStream(
+      userId,
+    ).map(
+          (data) =>
+      data['online'] == true,
+    );
   }
 
-  /// =========================
-  /// APP CLOSE
-  /// =========================
+  // ==========================================
+  // LAST SEEN
+  // ==========================================
 
-  static Future<void> stop()
-  async {
-    stopHeartbeat();
+  static Future<DateTime?>
+  getLastSeen(
+      String userId,
+      ) async {
+    if (userId.trim().isEmpty) {
+      return null;
+    }
 
-    await setOnline(false);
+    try {
+      final result =
+      await supabase
+          .from('profiles')
+          .select(
+        'last_seen',
+      )
+          .eq('id', userId)
+          .maybeSingle();
+
+      final value =
+      result?['last_seen'];
+
+      if (value == null) {
+        return null;
+      }
+
+      return DateTime.parse(
+        value.toString(),
+      ).toLocal();
+    } catch (e) {
+      debugPrint(
+        'GET LAST SEEN ERROR: $e',
+      );
+      return null;
+    }
+  }
+
+  // ==========================================
+  // DISPOSE
+  // ==========================================
+
+  static Future<void> dispose() async {
+    _stopHeartbeat();
   }
 }

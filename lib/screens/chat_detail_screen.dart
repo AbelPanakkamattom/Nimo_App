@@ -1,879 +1,431 @@
-import 'dart:async';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:record/record.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
 
-import '../services/profile_service.dart';
+import '../models/message_model.dart';
 import '../services/supabase_chat_service.dart';
 import '../services/supabase_storage_service.dart';
+import '../widgets/chat_input_widget.dart';
+import '../widgets/message_bubble.dart';
+import '../widgets/profile_avatarz.dart';
 
 class ChatDetailScreen extends StatefulWidget {
-  final String receiverId;
-  final String name;
-  final String? avatarUrl;
+  final String otherUserId;
+  final String otherUserName;
+  final String otherUserAvatar;
 
   const ChatDetailScreen({
     super.key,
-    required this.receiverId,
-    required this.name,
-    this.avatarUrl,
+    required this.otherUserId,
+    required this.otherUserName,
+    this.otherUserAvatar = '',
   });
 
   @override
-  State<ChatDetailScreen> createState() =>
-      _ChatDetailScreenState();
+  State<ChatDetailScreen> createState() => _ChatDetailScreenState();
 }
 
-class _ChatDetailScreenState
-    extends State<ChatDetailScreen> {
-  final SupabaseClient client =
-      Supabase.instance.client;
+class _ChatDetailScreenState extends State<ChatDetailScreen> {
+  static const Color background = Color(0xFFF5F6FF);
 
-  final TextEditingController
-  messageController =
-  TextEditingController();
+  final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
 
-  final ScrollController
-  scrollController =
-  ScrollController();
+  bool _isSending = false;
 
-  final AudioRecorder recorder =
-  AudioRecorder();
+  // =========================================================
+  // SEND TEXT MESSAGE
+  // =========================================================
 
-  bool sending = false;
-  bool recording = false;
+  Future<void> _sendMessage() async {
+    final text = _controller.text.trim();
 
-  Timer? typingTimer;
+    if (text.isEmpty || _isSending) return;
 
-  String get myId =>
-      client.auth.currentUser!.id;
-
-  /// =========================
-  /// GET MESSAGES
-  /// =========================
-
-  Stream<List<Map<String, dynamic>>>
-  getMessages() {
-    return client
-        .from('messages')
-        .stream(primaryKey: ['id'])
-        .map((rows) {
-      final filtered =
-      rows.where((msg) {
-        return (msg['sender_id'] ==
-            myId &&
-            msg['receiver_id'] ==
-                widget.receiverId) ||
-            (msg['sender_id'] ==
-                widget.receiverId &&
-                msg['receiver_id'] ==
-                    myId);
-      }).toList();
-
-      filtered.sort((a, b) {
-        return DateTime.parse(
-          a['created_at'],
-        ).compareTo(
-          DateTime.parse(
-            b['created_at'],
-          ),
-        );
-      });
-
-      return filtered;
-    });
-  }
-
-  /// =========================
-  /// SEND MESSAGE
-  /// =========================
-
-  Future<void> sendMessage() async {
-    final text =
-    messageController.text.trim();
-
-    if (text.isEmpty || sending) {
-      return;
-    }
-
-    setState(() {
-      sending = true;
-    });
-
-    final message = text;
-
-    messageController.clear();
+    _controller.clear();
 
     try {
-      await SupabaseChatService
-          .sendMessage(
-        receiverId: widget.receiverId,
-        content: message,
+      await SupabaseChatService.sendMessage(
+        receiverId: widget.otherUserId,
+        content: text,
         type: 'text',
       );
 
-      await ProfileService.setTyping(
-        receiverId: widget.receiverId,
-        isTyping: false,
-      );
-
-      scrollBottom();
+      _scrollToBottom();
     } catch (e) {
-      showSnack("Message failed");
+      _showError('Failed to send message');
     }
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      sending = false;
-    });
   }
 
-  /// =========================
-  /// SEND IMAGE
-  /// =========================
+  // =========================================================
+  // SEND IMAGE
+  // =========================================================
 
-  Future<void> sendImage() async {
+  Future<void> _sendImage() async {
     try {
       final picker = ImagePicker();
 
-      final picked =
-      await picker.pickImage(
+      final image = await picker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 70,
+        imageQuality: 80,
       );
 
-      if (picked == null) {
-        return;
+      if (image == null) return;
+
+      if (mounted) {
+        setState(() => _isSending = true);
       }
 
-      final file = File(picked.path);
+      final url = await SupabaseStorageService.uploadChatMedia(
+        file: File(image.path),
+        bucket: 'message',
+        folder: 'images',
+      );
 
-      final url =
-      await SupabaseStorageService
-          .uploadImage(file);
-
-      await SupabaseChatService
-          .sendMessage(
-        receiverId: widget.receiverId,
-        content: url,
+      await SupabaseChatService.sendMessage(
+        receiverId: widget.otherUserId,
+        content: '📷 Image',
         type: 'image',
+        mediaUrl: url,
       );
 
-      scrollBottom();
+      _scrollToBottom();
     } catch (e) {
-      showSnack(
-        "Image send failed",
-      );
+      _showError('Failed to send image');
+    } finally {
+      if (mounted) {
+        setState(() => _isSending = false);
+      }
     }
   }
 
-  /// =========================
-  /// RECORD AUDIO
-  /// =========================
+  // =========================================================
+  // SEND VIDEO
+  // =========================================================
 
-  Future<void> toggleRecording() async {
+  Future<void> _sendVideo() async {
     try {
-      if (!recording) {
-        final dir =
-            Directory.systemTemp;
+      final picker = ImagePicker();
 
-        final path =
-            "${dir.path}/${DateTime.now().millisecondsSinceEpoch}.m4a";
-
-        await recorder.start(
-          const RecordConfig(),
-          path: path,
-        );
-
-        if (!mounted) {
-          return;
-        }
-
-        setState(() {
-          recording = true;
-        });
-
-        return;
-      }
-
-      final path =
-      await recorder.stop();
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        recording = false;
-      });
-
-      if (path == null) {
-        return;
-      }
-
-      final file = File(path);
-
-      final url =
-      await SupabaseStorageService
-          .uploadAudio(file);
-
-      await SupabaseChatService
-          .sendMessage(
-        receiverId: widget.receiverId,
-        content: url,
-        type: 'audio',
+      final video = await picker.pickVideo(
+        source: ImageSource.gallery,
       );
 
-      scrollBottom();
+      if (video == null) return;
+
+      if (mounted) {
+        setState(() => _isSending = true);
+      }
+
+      final url = await SupabaseStorageService.uploadChatMedia(
+        file: File(video.path),
+        bucket: 'videos',
+        folder: 'chat_videos',
+      );
+
+      await SupabaseChatService.sendMessage(
+        receiverId: widget.otherUserId,
+        content: '🎥 Video',
+        type: 'video',
+        mediaUrl: url,
+      );
+
+      _scrollToBottom();
     } catch (e) {
-      showSnack(
-        "Voice message failed",
-      );
-    }
-  }
-
-  /// =========================
-  /// TYPING
-  /// =========================
-
-  Future<void> onTyping(
-      String value,
-      ) async {
-    final typing =
-        value.trim().isNotEmpty;
-
-    await ProfileService.setTyping(
-      receiverId: widget.receiverId,
-      isTyping: typing,
-    );
-
-    typingTimer?.cancel();
-
-    typingTimer = Timer(
-      const Duration(seconds: 2),
-          () async {
-        await ProfileService.setTyping(
-          receiverId:
-          widget.receiverId,
-          isTyping: false,
-        );
-      },
-    );
-  }
-
-  /// =========================
-  /// MARK SEEN
-  /// =========================
-
-  Future<void> markSeen() async {
-    try {
-      await SupabaseChatService
-          .markAsSeen(
-        widget.receiverId,
-      );
-    } catch (_) {}
-  }
-
-  /// =========================
-  /// FORMAT TIME
-  /// =========================
-
-  String formatTime(dynamic value) {
-    try {
-      final date =
-      DateTime.parse(value)
-          .toLocal();
-
-      int hour = date.hour;
-
-      final minute = date.minute
-          .toString()
-          .padLeft(2, '0');
-
-      final amPm =
-      hour >= 12 ? "PM" : "AM";
-
-      if (hour > 12) {
-        hour -= 12;
+      _showError('Failed to send video');
+    } finally {
+      if (mounted) {
+        setState(() => _isSending = false);
       }
-
-      if (hour == 0) {
-        hour = 12;
-      }
-
-      return "$hour:$minute $amPm";
-    } catch (_) {
-      return "";
     }
   }
 
-  /// =========================
-  /// STATUS ICON
-  /// =========================
+  // =========================================================
+  // SEND DOCUMENT
+  // =========================================================
 
-  Widget buildStatus(
-      String status,
-      ) {
-    if (status == 'seen') {
-      return const Icon(
-        Icons.done_all,
-        size: 16,
-        color: Colors.amber,
-      );
-    }
+  Future<void> _sendDocument() async {
+    try {
+      final result = await FilePicker.platform.pickFiles();
 
-    if (status == 'delivered') {
-      return const Icon(
-        Icons.done_all,
-        size: 16,
-        color: Colors.white70,
-      );
-    }
-
-    return const Icon(
-      Icons.check,
-      size: 16,
-      color: Colors.white70,
-    );
-  }
-
-  /// =========================
-  /// AUTO SCROLL
-  /// =========================
-
-  void scrollBottom() {
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) {
-      if (!scrollController
-          .hasClients) {
+      if (result == null || result.files.isEmpty) {
         return;
       }
 
-      scrollController.animateTo(
-        scrollController
-            .position.maxScrollExtent,
-        duration: const Duration(
-          milliseconds: 300,
-        ),
+      final pickedFile = result.files.single;
+
+      final filePath = pickedFile.path;
+      if (filePath == null || filePath.trim().isEmpty) {
+        return;
+      }
+
+      final fileName = pickedFile.name;
+
+      if (mounted) {
+        setState(() => _isSending = true);
+      }
+
+      final url = await SupabaseStorageService.uploadChatMedia(
+        file: File(filePath),
+        bucket: 'documents',
+        folder: 'chat_docs',
+      );
+
+      await SupabaseChatService.sendMessage(
+        receiverId: widget.otherUserId,
+        content: fileName,
+        type: 'document',
+        mediaUrl: url,
+        fileName: fileName,
+      );
+
+      _scrollToBottom();
+    } catch (e) {
+      _showError('Failed to send document');
+    } finally {
+      if (mounted) {
+        setState(() => _isSending = false);
+      }
+    }
+  }
+
+  // =========================================================
+  // VOICE PLACEHOLDER
+  // =========================================================
+
+  void _showVoicePlaceholder() {
+    _showError('Voice recording support coming soon.');
+  }
+
+  // =========================================================
+  // FORMAT DATE & TIME
+  // Example: 10 May, 12:45 PM
+  // =========================================================
+
+  String _formatDateTime(DateTime dateTime) {
+    return DateFormat('d MMM, h:mm a').format(
+      dateTime.toLocal(),
+    );
+  }
+
+  // =========================================================
+  // MESSAGE STATUS
+  // =========================================================
+
+  String _statusFor(Message message) {
+    return message.status.name;
+  }
+
+  // =========================================================
+  // BUILD MESSAGE BUBBLE
+  // =========================================================
+
+  Widget _buildMessageBubble(Message message) {
+    final isMe =
+        message.senderId == SupabaseChatService.myId;
+
+    final mediaUrl = message.mediaUrl ?? '';
+
+    final displayMessage =
+    message.type == MessageType.text
+        ? message.content
+        : (mediaUrl.isNotEmpty
+        ? mediaUrl
+        : message.content);
+
+    return MessageBubble(
+      message: displayMessage,
+      time: _formatDateTime(message.createdAt),
+      isMe: isMe,
+      isImage: message.type == MessageType.image,
+      isAudio: message.type == MessageType.audio,
+      isDocument:
+      message.type == MessageType.document,
+      isVideo: message.type == MessageType.video,
+      status: _statusFor(message),
+      fileName: message.fileName,
+    );
+  }
+
+  // =========================================================
+  // AUTO SCROLL
+  // =========================================================
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!_scrollController.hasClients) return;
+
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
     });
   }
 
-  /// =========================
-  /// SNACKBAR
-  /// =========================
+  // =========================================================
+  // SHOW ERROR
+  // =========================================================
 
-  void showSnack(String text) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(
+  void _showError(String text) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(text),
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
-  /// =========================
-  /// MESSAGE BUBBLE
-  /// =========================
-
-  Widget buildBubble(
-      Map<String, dynamic> msg,
-      ) {
-    final isMe =
-        msg['sender_id'] == myId;
-
-    final type =
-        msg['type'] ?? 'text';
-
-    final content =
-        msg['content'] ?? '';
-
-    final status =
-        msg['status'] ?? 'sent';
-
-    return Align(
-      alignment: isMe
-          ? Alignment.centerRight
-          : Alignment.centerLeft,
-      child: Container(
-        constraints:
-        const BoxConstraints(
-          maxWidth: 300,
-        ),
-        margin:
-        const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 5,
-        ),
-        padding:
-        const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isMe
-              ? const Color(
-            0xFF6C5CE7,
-          )
-              : Colors.white,
-          borderRadius:
-          BorderRadius.circular(20),
-        ),
-        child: Column(
-          crossAxisAlignment:
-          CrossAxisAlignment.end,
-          children: [
-            if (type == 'image')
-              ClipRRect(
-                borderRadius:
-                BorderRadius.circular(
-                  14,
-                ),
-                child: Image.network(
-                  content,
-                  width: 220,
-                  fit: BoxFit.cover,
-                ),
-              )
-            else if (type == 'audio')
-              Row(
-                mainAxisSize:
-                MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.mic,
-                    color: isMe
-                        ? Colors.white
-                        : Colors.black,
-                  ),
-                  const SizedBox(
-                    width: 8,
-                  ),
-                  Text(
-                    "Voice Message",
-                    style: TextStyle(
-                      color: isMe
-                          ? Colors.white
-                          : Colors.black,
-                    ),
-                  ),
-                ],
-              )
-            else
-              Text(
-                content,
-                style: TextStyle(
-                  color: isMe
-                      ? Colors.white
-                      : Colors.black,
-                  fontSize: 15,
-                ),
-              ),
-
-            const SizedBox(
-              height: 6,
-            ),
-
-            Row(
-              mainAxisSize:
-              MainAxisSize.min,
-              children: [
-                Text(
-                  formatTime(
-                    msg['created_at'],
-                  ),
-                  style: TextStyle(
-                    color: isMe
-                        ? Colors.white70
-                        : Colors.grey,
-                    fontSize: 10,
-                  ),
-                ),
-
-                if (isMe) ...[
-                  const SizedBox(
-                    width: 5,
-                  ),
-                  buildStatus(status),
-                ],
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// =========================
-  /// INIT
-  /// =========================
+  // =========================================================
+  // INIT
+  // =========================================================
 
   @override
   void initState() {
     super.initState();
 
-    markSeen();
+    SupabaseChatService.markAsSeen(
+      widget.otherUserId,
+    );
   }
 
-  /// =========================
-  /// UI
-  /// =========================
+  // =========================================================
+  // DISPOSE
+  // =========================================================
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  // =========================================================
+  // BUILD
+  // =========================================================
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<
-        Map<String, dynamic>?>(
-      stream:
-      ProfileService.profileStream(
-        widget.receiverId,
-      ),
-      builder:
-          (context, profileSnap) {
-        final profile =
-            profileSnap.data;
-
-        final online =
-        ProfileService.isOnline(
-          profile,
-        );
-
-        return StreamBuilder<bool>(
-          stream:
-          ProfileService.typingStream(
-            widget.receiverId,
-          ),
-          builder:
-              (context, typingSnap) {
-            final typing =
-                typingSnap.data ??
-                    false;
-
-            return Scaffold(
-              backgroundColor:
-              const Color(
-                0xFFF5F6FF,
-              ),
-              body: Column(
+    return Scaffold(
+      backgroundColor: background,
+      resizeToAvoidBottomInset: true,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
+        titleSpacing: 0,
+        title: Row(
+          children: [
+            ProfileAvatar(
+              name: widget.otherUserName,
+              imageUrl: widget.otherUserAvatar,
+              radius: 20,
+              isOnline: true,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment:
+                CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  SafeArea(
-                    bottom: false,
-                    child: Container(
-                      color: Colors.white,
-                      padding:
-                      const EdgeInsets
-                          .all(12),
-                      child: Row(
-                        children: [
-                          IconButton(
-                            onPressed: () {
-                              Navigator.pop(
-                                context,
-                              );
-                            },
-                            icon: const Icon(
-                              Icons.arrow_back,
-                            ),
-                          ),
-
-                          widget.avatarUrl !=
-                              null &&
-                              widget
-                                  .avatarUrl!
-                                  .isNotEmpty
-                              ? CircleAvatar(
-                            radius: 22,
-                            backgroundImage:
-                            NetworkImage(
-                              widget
-                                  .avatarUrl!,
-                            ),
-                          )
-                              : CircleAvatar(
-                            radius: 22,
-                            backgroundColor:
-                            const Color(
-                              0xFF6C5CE7,
-                            ),
-                            child: Text(
-                              widget
-                                  .name[0]
-                                  .toUpperCase(),
-                              style:
-                              const TextStyle(
-                                color: Colors
-                                    .white,
-                                fontWeight:
-                                FontWeight
-                                    .bold,
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(
-                            width: 12,
-                          ),
-
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment
-                                  .start,
-                              children: [
-                                Text(
-                                  widget.name,
-                                  style:
-                                  const TextStyle(
-                                    fontWeight:
-                                    FontWeight
-                                        .bold,
-                                    fontSize:
-                                    16,
-                                  ),
-                                ),
-
-                                Text(
-                                  typing
-                                      ? "typing..."
-                                      : online
-                                      ? "online"
-                                      : ProfileService
-                                      .getLastSeenText(
-                                    profile,
-                                  ),
-                                  style:
-                                  TextStyle(
-                                    color: typing
-                                        ? Colors
-                                        .green
-                                        : Colors
-                                        .grey,
-                                    fontSize:
-                                    12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                          PopupMenuButton(
-                            itemBuilder:
-                                (_) => [
-                              const PopupMenuItem(
-                                value:
-                                'view',
-                                child: Text(
-                                  "View Contact",
-                                ),
-                              ),
-                              const PopupMenuItem(
-                                value:
-                                'block',
-                                child: Text(
-                                  "Block",
-                                ),
-                              ),
-                            ],
-                            onSelected:
-                                (value) async {
-                              if (value ==
-                                  'block') {
-                                await ProfileService
-                                    .blockUser(
-                                  widget
-                                      .receiverId,
-                                );
-
-                                if (!mounted) {
-                                  return;
-                                }
-
-                                showSnack(
-                                  "User blocked",
-                                );
-                              }
-                            },
-                          ),
-                        ],
-                      ),
+                  Text(
+                    widget.otherUserName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
                     ),
                   ),
-
-                  Expanded(
-                    child: StreamBuilder<
-                        List<
-                            Map<String,
-                                dynamic>>>(
-                      stream:
-                      getMessages(),
-                      builder: (
-                          context,
-                          snapshot,
-                          ) {
-                        final messages =
-                            snapshot.data ??
-                                [];
-
-                        WidgetsBinding
-                            .instance
-                            .addPostFrameCallback(
-                              (_) {
-                            scrollBottom();
-                          },
-                        );
-
-                        return ListView
-                            .builder(
-                          controller:
-                          scrollController,
-                          padding:
-                          const EdgeInsets
-                              .only(
-                            top: 10,
-                            bottom: 10,
-                          ),
-                          itemCount:
-                          messages.length,
-                          itemBuilder:
-                              (_, i) {
-                            return buildBubble(
-                              messages[i],
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ),
-
-                  SafeArea(
-                    top: false,
-                    child: Container(
-                      color: Colors.white,
-                      padding:
-                      const EdgeInsets
-                          .all(10),
-                      child: Row(
-                        children: [
-                          IconButton(
-                            onPressed:
-                            sendImage,
-                            icon:
-                            const Icon(
-                              Icons.image,
-                            ),
-                          ),
-
-                          IconButton(
-                            onPressed:
-                            toggleRecording,
-                            icon: Icon(
-                              recording
-                                  ? Icons.stop
-                                  : Icons.mic,
-                              color: recording
-                                  ? Colors.red
-                                  : null,
-                            ),
-                          ),
-
-                          Expanded(
-                            child: TextField(
-                              controller:
-                              messageController,
-                              onChanged:
-                              onTyping,
-                              minLines: 1,
-                              maxLines: 5,
-                              decoration:
-                              InputDecoration(
-                                hintText:
-                                "Type message...",
-                                filled: true,
-                                fillColor:
-                                const Color(
-                                  0xFFF5F6FF,
-                                ),
-                                border:
-                                OutlineInputBorder(
-                                  borderRadius:
-                                  BorderRadius.circular(
-                                    30,
-                                  ),
-                                  borderSide:
-                                  BorderSide.none,
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(
-                            width: 8,
-                          ),
-
-                          GestureDetector(
-                            onTap:
-                            sendMessage,
-                            child: Container(
-                              width: 52,
-                              height: 52,
-                              decoration:
-                              const BoxDecoration(
-                                color: Color(
-                                  0xFF6C5CE7,
-                                ),
-                                shape:
-                                BoxShape.circle,
-                              ),
-                              child: sending
-                                  ? const Padding(
-                                padding:
-                                EdgeInsets.all(
-                                  14,
-                                ),
-                                child:
-                                CircularProgressIndicator(
-                                  color: Colors
-                                      .white,
-                                  strokeWidth:
-                                  2,
-                                ),
-                              )
-                                  : const Icon(
-                                Icons.send,
-                                color: Colors
-                                    .white,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                  const Text(
+                    'Online',
+                    style: TextStyle(
+                      color: Colors.green,
+                      fontSize: 12,
                     ),
                   ),
                 ],
               ),
-            );
-          },
-        );
-      },
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            onPressed: () {},
+            icon: const Icon(Icons.call),
+          ),
+          IconButton(
+            onPressed: () {},
+            icon: const Icon(Icons.videocam),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: StreamBuilder<List<Message>>(
+              stream: SupabaseChatService.getChat(
+                widget.otherUserId,
+              ),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(
+                    child:
+                    CircularProgressIndicator(),
+                  );
+                }
+
+                final messages = snapshot.data!;
+
+                if (messages.isEmpty) {
+                  return const Center(
+                    child: Text('No messages yet'),
+                  );
+                }
+
+                WidgetsBinding.instance
+                    .addPostFrameCallback(
+                      (_) => _scrollToBottom(),
+                );
+
+                return ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(14),
+                  keyboardDismissBehavior:
+                  ScrollViewKeyboardDismissBehavior
+                      .onDrag,
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    return _buildMessageBubble(
+                      messages[index],
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+
+          ChatInputWidget(
+            controller: _controller,
+            isSending: _isSending,
+            onSend: _sendMessage,
+            onImage: _sendImage,
+            onDocument: _sendDocument,
+            onVideo: _sendVideo,
+            onVoice: _showVoicePlaceholder,
+            onTyping: (text) {
+              // Future: typing indicator support
+            },
+          ),
+        ],
+      ),
     );
-  }
-
-  @override
-  void dispose() {
-    typingTimer?.cancel();
-
-    ProfileService.setTyping(
-      receiverId: widget.receiverId,
-      isTyping: false,
-    );
-
-    messageController.dispose();
-    scrollController.dispose();
-    recorder.dispose();
-
-    super.dispose();
   }
 }

@@ -1,13 +1,28 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ProfileService {
+  ProfileService._();
+
   static final SupabaseClient supabase =
       Supabase.instance.client;
 
-  /// =========================
-  /// CURRENT USER
-  /// =========================
+  // =========================================================
+  // COLORS / CONSTANTS
+  // =========================================================
+
+  static const String profileTable =
+      'profiles';
+
+  static const String avatarBucket =
+      'avatarz';
+
+  // =========================================================
+  // AUTH HELPERS
+  // =========================================================
 
   static User? get currentUser =>
       supabase.auth.currentUser;
@@ -15,154 +30,364 @@ class ProfileService {
   static String get currentUserId =>
       currentUser?.id ?? '';
 
-  /// =========================
-  /// GET MY PROFILE
-  /// =========================
+  static bool get isLoggedIn =>
+      currentUser != null;
+
+  // =========================================================
+  // GET MY PROFILE
+  // =========================================================
 
   static Future<Map<String, dynamic>?>
   getMyProfile() async {
     try {
-      final user = currentUser;
+      if (!isLoggedIn) return null;
 
-      if (user == null) {
-        return null;
-      }
-
-      final profile = await supabase
-          .from('profiles')
+      final response =
+      await supabase
+          .from(profileTable)
           .select()
-          .eq('id', user.id)
+          .eq('id', currentUserId)
           .maybeSingle();
 
-      return profile;
+      if (response == null) {
+        await createProfileIfNotExists();
+
+        final retry =
+        await supabase
+            .from(profileTable)
+            .select()
+            .eq(
+          'id',
+          currentUserId,
+        )
+            .maybeSingle();
+
+        if (retry == null) {
+          return null;
+        }
+
+        return Map<String, dynamic>.from(
+          retry,
+        );
+      }
+
+      return Map<String, dynamic>.from(
+        response,
+      );
     } catch (e) {
       debugPrint(
-        "GET PROFILE ERROR: $e",
+        'GET MY PROFILE ERROR: $e',
       );
-
       return null;
     }
   }
 
-  /// =========================
-  /// GET USER PROFILE
-  /// =========================
+  // =========================================================
+  // GET USER PROFILE
+  // =========================================================
 
   static Future<Map<String, dynamic>?>
   getUserProfile(
       String userId,
       ) async {
     try {
-      final profile = await supabase
-          .from('profiles')
+      if (userId.trim().isEmpty) {
+        return null;
+      }
+
+      final response =
+      await supabase
+          .from(profileTable)
           .select()
           .eq('id', userId)
           .maybeSingle();
 
-      return profile;
+      if (response == null) {
+        return null;
+      }
+
+      return Map<String, dynamic>.from(
+        response,
+      );
     } catch (e) {
       debugPrint(
-        "GET USER PROFILE ERROR: $e",
+        'GET USER PROFILE ERROR: $e',
       );
-
       return null;
     }
   }
 
-  /// =========================
-  /// PROFILE STREAM
-  /// =========================
+  // =========================================================
+  // PROFILE STREAM
+  // =========================================================
 
-  static Stream<
-      Map<String, dynamic>?>
+  static Stream<Map<String, dynamic>?>
   profileStream(
       String userId,
       ) {
+    if (userId.trim().isEmpty) {
+      return Stream.value(null);
+    }
+
     return supabase
-        .from('profiles')
+        .from(profileTable)
         .stream(primaryKey: ['id'])
-        .map((profiles) {
-      try {
-        return profiles.firstWhere(
-              (profile) =>
-          profile['id'] ==
-              userId,
-        );
-      } catch (_) {
+        .eq('id', userId)
+        .map((rows) {
+      if (rows.isEmpty) {
         return null;
       }
+
+      return Map<String,
+          dynamic>.from(
+        rows.first,
+      );
     });
   }
 
-  /// =========================
-  /// UPDATE PROFILE
-  /// =========================
+  // =========================================================
+  // CREATE PROFILE
+  // =========================================================
 
-  static Future<bool> updateProfile({
-    required String name,
-    String? description,
-    String? avatarUrl,
-  }) async {
+  static Future<bool>
+  createProfileIfNotExists() async {
     try {
-      final user = currentUser;
-
-      if (user == null) {
+      if (!isLoggedIn) {
         return false;
       }
 
+      final existing =
       await supabase
-          .from('profiles')
-          .update({
-        'name': name.trim(),
-        'description':
-        description ?? '',
+          .from(profileTable)
+          .select()
+          .eq(
+        'id',
+        currentUserId,
+      )
+          .maybeSingle();
+
+      if (existing != null) {
+        return true;
+      }
+
+      final user = currentUser!;
+
+      final metadata =
+          user.userMetadata ?? {};
+
+      final name =
+      metadata['name']
+          ?.toString()
+          .trim()
+          .isNotEmpty ==
+          true
+          ? metadata['name']
+          .toString()
+          .trim()
+          : user.email
+          ?.split('@')
+          .first ??
+          'NIMO User';
+
+      final avatarUrl =
+          metadata['avatar_url']
+              ?.toString() ??
+              '';
+
+      final bio =
+          metadata['bio']
+              ?.toString() ??
+              '';
+
+      await supabase
+          .from(profileTable)
+          .insert({
+        'id': user.id,
+        'email':
+        user.email ?? '',
+        'name': name,
+        'bio': bio,
+        'description': bio,
         'avatar_url':
-        avatarUrl ?? '',
-      }).eq('id', user.id);
+        avatarUrl,
+        'is_online': true,
+        'typing_to': '',
+        'last_seen':
+        DateTime.now()
+            .toUtc()
+            .toIso8601String(),
+        'updated_at':
+        DateTime.now()
+            .toUtc()
+            .toIso8601String(),
+      });
 
       return true;
     } catch (e) {
       debugPrint(
-        "UPDATE PROFILE ERROR: $e",
+        'CREATE PROFILE ERROR: $e',
       );
-
       return false;
     }
   }
 
-  /// =========================
-  /// UPDATE ONLINE STATUS
-  /// =========================
+  // =========================================================
+  // UPDATE PROFILE
+  // =========================================================
+
+  static Future<bool> updateProfile({
+    required String name,
+    String? bio,
+    String? description,
+    String? avatarUrl,
+  }) async {
+    try {
+      if (!isLoggedIn) {
+        return false;
+      }
+
+      final trimmedName =
+      name.trim();
+
+      if (trimmedName.isEmpty) {
+        return false;
+      }
+
+      final current =
+      await getMyProfile();
+
+      final finalBio =
+      (bio ?? description ?? '')
+          .trim();
+
+      final finalAvatar =
+      (avatarUrl != null &&
+          avatarUrl
+              .trim()
+              .isNotEmpty)
+          ? avatarUrl.trim()
+          : current?['avatar_url']
+          ?.toString() ??
+          '';
+
+      await supabase
+          .from(profileTable)
+          .upsert({
+        'id': currentUserId,
+        'email':
+        currentUser?.email ??
+            '',
+        'name': trimmedName,
+        'bio': finalBio,
+        'description':
+        finalBio,
+        'avatar_url':
+        finalAvatar,
+        'updated_at':
+        DateTime.now()
+            .toUtc()
+            .toIso8601String(),
+      });
+
+      await supabase.auth
+          .updateUser(
+        UserAttributes(
+          data: {
+            'name':
+            trimmedName,
+            'bio': finalBio,
+            'avatar_url':
+            finalAvatar,
+          },
+        ),
+      );
+
+      return true;
+    } catch (e) {
+      debugPrint(
+        'UPDATE PROFILE ERROR: $e',
+      );
+      return false;
+    }
+  }
+
+  // =========================================================
+  // UPLOAD AVATAR
+  // =========================================================
+
+  static Future<String?>
+  uploadAvatar(
+      File file,
+      ) async {
+    try {
+      if (!isLoggedIn) {
+        return null;
+      }
+
+      final extension =
+      p.extension(file.path);
+
+      final path =
+          '$currentUserId/${DateTime.now().millisecondsSinceEpoch}$extension';
+
+      await supabase.storage
+          .from(avatarBucket)
+          .upload(
+        path,
+        file,
+        fileOptions:
+        const FileOptions(
+          upsert: true,
+        ),
+      );
+
+      final publicUrl =
+      supabase.storage
+          .from(
+        avatarBucket,
+      )
+          .getPublicUrl(path);
+
+      return publicUrl;
+    } catch (e) {
+      debugPrint(
+        'UPLOAD AVATAR ERROR: $e',
+      );
+      return null;
+    }
+  }
+
+  // =========================================================
+  // ONLINE STATUS
+  // =========================================================
 
   static Future<void>
   setOnlineStatus(
       bool online,
       ) async {
     try {
-      final user = currentUser;
-
-      if (user == null) {
-        return;
-      }
+      if (!isLoggedIn) return;
 
       await supabase
-          .from('profiles')
-          .update({
+          .from(profileTable)
+          .upsert({
+        'id': currentUserId,
         'is_online': online,
         'last_seen':
         DateTime.now()
+            .toUtc()
             .toIso8601String(),
-      }).eq('id', user.id);
+        'updated_at':
+        DateTime.now()
+            .toUtc()
+            .toIso8601String(),
+      });
     } catch (e) {
       debugPrint(
-        "ONLINE STATUS ERROR: $e",
+        'ONLINE STATUS ERROR: $e',
       );
     }
   }
-
-  /// =========================
-  /// IS ONLINE
-  /// =========================
 
   static bool isOnline(
       Map<String, dynamic>? profile,
@@ -175,139 +400,155 @@ class ProfileService {
         true;
   }
 
-  /// =========================
-  /// LAST SEEN TEXT
-  /// =========================
+  // =========================================================
+  // LAST SEEN
+  // =========================================================
 
   static String getLastSeenText(
       Map<String, dynamic>? profile,
       ) {
-    if (profile == null) {
-      return "offline";
-    }
-
-    final online =
-        profile['is_online'] == true;
-
-    if (online) {
-      return "online";
-    }
-
-    final lastSeen =
-    profile['last_seen'];
-
-    if (lastSeen == null) {
-      return "offline";
-    }
-
     try {
-      final date =
-      DateTime.parse(lastSeen)
-          .toLocal();
+      if (profile == null) {
+        return 'offline';
+      }
 
-      final now = DateTime.now();
+      if (isOnline(profile)) {
+        return 'online';
+      }
+
+      final raw =
+      profile['last_seen'];
+
+      if (raw == null) {
+        return 'offline';
+      }
+
+      final lastSeen =
+      DateTime.parse(
+        raw.toString(),
+      ).toLocal();
 
       final difference =
-      now.difference(date);
+      DateTime.now()
+          .difference(
+        lastSeen,
+      );
 
       if (difference.inSeconds <
           60) {
-        return "last seen just now";
+        return 'last seen just now';
       }
 
       if (difference.inMinutes <
           60) {
-        return "last seen ${difference.inMinutes} min ago";
+        return 'last seen ${difference.inMinutes} min ago';
       }
 
-      if (difference.inHours < 24) {
-        return "last seen ${difference.inHours} hr ago";
+      if (difference.inHours <
+          24) {
+        return 'last seen ${difference.inHours} hr ago';
       }
 
-      return "last seen ${date.day}/${date.month}/${date.year}";
-    } catch (_) {
-      return "offline";
+      if (difference.inDays == 1) {
+        return 'last seen yesterday';
+      }
+
+      return 'last seen ${difference.inDays} days ago';
+    } catch (e) {
+      debugPrint(
+        'LAST SEEN ERROR: $e',
+      );
+
+      return 'offline';
     }
   }
 
-  /// =========================
-  /// SET TYPING
-  /// =========================
+  // =========================================================
+  // TYPING STATUS
+  // =========================================================
 
   static Future<void> setTyping({
     required String receiverId,
     required bool isTyping,
   }) async {
     try {
-      final user = currentUser;
+      if (!isLoggedIn) return;
 
-      if (user == null) {
+      if (receiverId
+          .trim()
+          .isEmpty) {
         return;
       }
 
       await supabase
-          .from('profiles')
-          .update({
+          .from(profileTable)
+          .upsert({
+        'id': currentUserId,
         'typing_to':
         isTyping
             ? receiverId
             : '',
-      }).eq('id', user.id);
+        'typing_updated_at':
+        DateTime.now()
+            .toUtc()
+            .toIso8601String(),
+      });
     } catch (e) {
       debugPrint(
-        "SET TYPING ERROR: $e",
+        'SET TYPING ERROR: $e',
       );
     }
   }
 
-  /// =========================
-  /// TYPING STREAM
-  /// =========================
-
-  static Stream<bool> typingStream(
+  static Stream<bool>
+  typingStream(
       String otherUserId,
       ) {
-    final myId = currentUserId;
+    if (!isLoggedIn ||
+        otherUserId
+            .trim()
+            .isEmpty) {
+      return Stream.value(false);
+    }
 
     return supabase
-        .from('profiles')
+        .from(profileTable)
         .stream(primaryKey: ['id'])
-        .map((profiles) {
-      try {
-        final profile =
-        profiles.firstWhere(
-              (p) =>
-          p['id'] ==
-              otherUserId,
-        );
-
-        return profile[
-        'typing_to'] ==
-            myId;
-      } catch (_) {
+        .eq('id', otherUserId)
+        .map((rows) {
+      if (rows.isEmpty) {
         return false;
       }
-    });
+
+      final profile =
+          rows.first;
+
+      return profile[
+      'typing_to'] ==
+          currentUserId;
+    })
+        .distinct();
   }
 
-  /// =========================
-  /// BLOCK USER
-  /// =========================
+  // =========================================================
+  // BLOCK USERS
+  // =========================================================
 
   static Future<bool> blockUser(
       String blockedUserId,
       ) async {
     try {
-      final user = currentUser;
-
-      if (user == null) {
+      if (!isLoggedIn) {
         return false;
       }
 
       await supabase
-          .from('blocked_users')
-          .insert({
-        'blocker_id': user.id,
+          .from(
+        'blocked_users',
+      )
+          .upsert({
+        'blocker_id':
+        currentUserId,
         'blocked_id':
         blockedUserId,
       });
@@ -315,33 +556,28 @@ class ProfileService {
       return true;
     } catch (e) {
       debugPrint(
-        "BLOCK USER ERROR: $e",
+        'BLOCK USER ERROR: $e',
       );
-
       return false;
     }
   }
-
-  /// =========================
-  /// UNBLOCK USER
-  /// =========================
 
   static Future<bool> unblockUser(
       String blockedUserId,
       ) async {
     try {
-      final user = currentUser;
-
-      if (user == null) {
+      if (!isLoggedIn) {
         return false;
       }
 
       await supabase
-          .from('blocked_users')
+          .from(
+        'blocked_users',
+      )
           .delete()
           .eq(
         'blocker_id',
-        user.id,
+        currentUserId,
       )
           .eq(
         'blocked_id',
@@ -351,33 +587,29 @@ class ProfileService {
       return true;
     } catch (e) {
       debugPrint(
-        "UNBLOCK USER ERROR: $e",
+        'UNBLOCK USER ERROR: $e',
       );
-
       return false;
     }
   }
-
-  /// =========================
-  /// IS BLOCKED
-  /// =========================
 
   static Future<bool> isBlocked(
       String otherUserId,
       ) async {
     try {
-      final user = currentUser;
-
-      if (user == null) {
+      if (!isLoggedIn) {
         return false;
       }
 
-      final data = await supabase
-          .from('blocked_users')
+      final result =
+      await supabase
+          .from(
+        'blocked_users',
+      )
           .select()
           .eq(
         'blocker_id',
-        user.id,
+        currentUserId,
       )
           .eq(
         'blocked_id',
@@ -385,15 +617,18 @@ class ProfileService {
       )
           .maybeSingle();
 
-      return data != null;
-    } catch (_) {
+      return result != null;
+    } catch (e) {
+      debugPrint(
+        'IS BLOCKED ERROR: $e',
+      );
       return false;
     }
   }
 
-  /// =========================
-  /// SEARCH USERS
-  /// =========================
+  // =========================================================
+  // SEARCH USERS
+  // =========================================================
 
   static Future<
       List<Map<String, dynamic>>>
@@ -401,38 +636,57 @@ class ProfileService {
       String query,
       ) async {
     try {
-      final users = await supabase
-          .from('profiles')
+      final trimmed =
+      query.trim();
+
+      if (trimmed.isEmpty) {
+        return [];
+      }
+
+      final response =
+      await supabase
+          .from(profileTable)
           .select()
           .ilike(
         'name',
-        '%$query%',
-      );
+        '%$trimmed%',
+      )
+          .neq(
+        'id',
+        currentUserId,
+      )
+          .limit(50);
 
-      return List<Map<String,
-          dynamic>>.from(users);
+      return List<
+          Map<String,
+              dynamic>>.from(
+        response,
+      );
     } catch (e) {
       debugPrint(
-        "SEARCH USERS ERROR: $e",
+        'SEARCH USERS ERROR: $e',
       );
-
       return [];
     }
   }
 
-  /// =========================
-  /// USER COUNT
-  /// =========================
+  // =========================================================
+  // TOTAL USERS
+  // =========================================================
 
-  static Future<int> totalUsers()
-  async {
+  static Future<int>
+  totalUsers() async {
     try {
-      final users = await supabase
-          .from('profiles')
-          .select();
+      final response =
+      await supabase
+          .from(profileTable)
+          .select('id');
 
-      return users.length;
-    } catch (_) {
+      return response.length;
+    } catch (e) {
+      debugPrint(
+        'TOTAL USERS ERROR: $e',
+      );
       return 0;
     }
   }

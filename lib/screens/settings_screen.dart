@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'auth_screen.dart';
+import 'blocked_users_screen.dart';
+import 'edit_profile_screen.dart';
+import 'email_screen.dart';
+import 'starred_messages_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -16,26 +20,367 @@ class _SettingsScreenState
   final SupabaseClient client =
       Supabase.instance.client;
 
+  static const Color primary =
+  Color(0xFF6C5CE7);
+  static const Color secondary =
+  Color(0xFF8E7BFF);
+  static const Color background =
+  Color(0xFFF5F6FF);
+
   bool notifications = true;
   bool darkMode = false;
   bool readReceipts = true;
 
-  Future<void> logout() async {
-    final navigator =
-    Navigator.of(context);
+  Map<String, dynamic> profile = {};
 
-    await client.auth.signOut();
+  // =========================================================
+  // INIT
+  // =========================================================
+
+  @override
+  void initState() {
+    super.initState();
+    loadProfile();
+  }
+
+  // =========================================================
+  // LOAD PROFILE
+  // =========================================================
+
+  Future<void> loadProfile() async {
+    final user = client.auth.currentUser;
+
+    if (user == null) return;
+
+    try {
+      final data = await client
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
+
+      if (!mounted) return;
+
+      setState(() {
+        profile = data ??
+            {
+              'id': user.id,
+              'name':
+              user.userMetadata?['name'] ??
+                  user.email
+                      ?.split('@')
+                      .first ??
+                  'NIMO User',
+              'email': user.email ?? '',
+              'bio':
+              user.userMetadata?['bio'] ??
+                  '',
+              'avatar_url':
+              user.userMetadata?[
+              'avatar_url'] ??
+                  '',
+            };
+      });
+    } catch (e) {
+      debugPrint(
+        'SETTINGS PROFILE LOAD ERROR: $e',
+      );
+    }
+  }
+
+  // =========================================================
+  // LOGOUT
+  // =========================================================
+
+  Future<void> logout() async {
+    try {
+      await client.auth.signOut();
+    } catch (_) {}
 
     if (!mounted) return;
 
-    navigator.pushAndRemoveUntil(
+    Navigator.pushAndRemoveUntil(
+      context,
       MaterialPageRoute(
-        builder: (_) =>
-        const AuthScreen(),
+        builder: (_) => const AuthScreen(),
       ),
-          (route) => false,
+          (_) => false,
     );
   }
+
+  // =========================================================
+  // SNACKBAR
+  // =========================================================
+
+  void showMessage(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+        .showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior:
+        SnackBarBehavior.floating,
+        backgroundColor: primary,
+      ),
+    );
+  }
+
+  // =========================================================
+  // CONFIRM LOGOUT
+  // =========================================================
+
+  Future<void> confirmLogout() async {
+    final result =
+    await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius:
+            BorderRadius.circular(
+              24,
+            ),
+          ),
+          title: const Text('Logout'),
+          content: const Text(
+            'Are you sure you want to logout from NIMO?',
+          ),
+          actions: [
+            TextButton(
+              onPressed:
+                  () => Navigator.pop(
+                dialogContext,
+                false,
+              ),
+              child: const Text(
+                'Cancel',
+              ),
+            ),
+            ElevatedButton(
+              style:
+              ElevatedButton.styleFrom(
+                backgroundColor:
+                Colors.red,
+              ),
+              onPressed:
+                  () => Navigator.pop(
+                dialogContext,
+                true,
+              ),
+              child: const Text(
+                'Logout',
+                style: TextStyle(
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == true) {
+      await logout();
+    }
+  }
+
+  // =========================================================
+  // OPEN EDIT PROFILE
+  // =========================================================
+
+  Future<void> openEditProfile() async {
+    final result =
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (_) => EditProfileScreen(
+          profile: profile,
+        ),
+      ),
+    );
+
+    if (result == true) {
+      await loadProfile();
+
+      if (!mounted) return;
+
+      showMessage(
+        'Profile updated successfully.',
+      );
+    }
+  }
+
+  // =========================================================
+  // PROFILE CARD
+  // =========================================================
+
+  Widget buildProfileCard() {
+    final userName =
+    (profile['name'] ??
+        profile['username'] ??
+        'NIMO User')
+        .toString();
+
+    final userEmail =
+    (profile['email'] ?? '')
+        .toString();
+
+    final avatarUrl =
+    (profile['avatar_url'] ?? '')
+        .toString();
+
+    final initial =
+    userName.trim().isNotEmpty
+        ? userName
+        .trim()[0]
+        .toUpperCase()
+        : 'N';
+
+    ImageProvider? imageProvider;
+
+    if (avatarUrl.isNotEmpty) {
+      imageProvider =
+          NetworkImage(avatarUrl);
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [
+            primary,
+            secondary,
+          ],
+          begin: Alignment.topLeft,
+          end:
+          Alignment.bottomRight,
+        ),
+        borderRadius:
+        BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: primary.withAlpha(
+              70,
+            ),
+            blurRadius: 24,
+            offset: const Offset(
+              0,
+              10,
+            ),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 34,
+            backgroundColor:
+            Colors.white
+                .withAlpha(40),
+            backgroundImage:
+            imageProvider,
+            child: imageProvider ==
+                null
+                ? Text(
+              initial,
+              style:
+              const TextStyle(
+                color:
+                Colors.white,
+                fontSize:
+                28,
+                fontWeight:
+                FontWeight
+                    .bold,
+              ),
+            )
+                : null,
+          ),
+
+          const SizedBox(width: 16),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment:
+              CrossAxisAlignment
+                  .start,
+              children: [
+                Text(
+                  userName,
+                  maxLines: 1,
+                  overflow:
+                  TextOverflow
+                      .ellipsis,
+                  style:
+                  const TextStyle(
+                    color:
+                    Colors.white,
+                    fontSize: 22,
+                    fontWeight:
+                    FontWeight
+                        .bold,
+                  ),
+                ),
+                const SizedBox(
+                  height: 4,
+                ),
+                Text(
+                  userEmail,
+                  maxLines: 1,
+                  overflow:
+                  TextOverflow
+                      .ellipsis,
+                  style:
+                  const TextStyle(
+                    color:
+                    Colors.white70,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          IconButton(
+            onPressed:
+            openEditProfile,
+            icon: const Icon(
+              Icons.edit,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // =========================================================
+  // SECTION TITLE
+  // =========================================================
+
+  Widget buildSectionTitle(
+      String title) {
+    return Padding(
+      padding: const EdgeInsets.only(
+        top: 4,
+        bottom: 14,
+      ),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 18,
+          fontWeight:
+          FontWeight.bold,
+          color: Colors.black87,
+        ),
+      ),
+    );
+  }
+
+  // =========================================================
+  // TILE
+  // =========================================================
 
   Widget buildTile({
     required IconData icon,
@@ -43,6 +388,9 @@ class _SettingsScreenState
     String? subtitle,
     Widget? trailing,
     VoidCallback? onTap,
+    Color iconColor = primary,
+    Color iconBackground =
+    const Color(0xFFF0EDFF),
   }) {
     return Container(
       margin:
@@ -52,129 +400,198 @@ class _SettingsScreenState
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius:
-        BorderRadius.circular(22),
+        BorderRadius.circular(
+          22,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color:
+            Colors.black.withAlpha(
+              8,
+            ),
+            blurRadius: 12,
+            offset: const Offset(
+              0,
+              4,
+            ),
+          ),
+        ],
       ),
       child: ListTile(
         onTap: onTap,
+        contentPadding:
+        const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 6,
+        ),
         leading: Container(
           width: 46,
           height: 46,
           decoration: BoxDecoration(
-            color: const Color(
-              0xFF6C5CE7,
-            ).withAlpha(25),
+            color:
+            iconBackground,
             borderRadius:
             BorderRadius.circular(
               14,
             ),
           ),
-          child: const Icon(
-            Icons.settings,
-            color: Color(0xFF6C5CE7),
+          child: Icon(
+            icon,
+            color: iconColor,
           ),
         ),
         title: Text(
           title,
           style: const TextStyle(
-            fontWeight: FontWeight.w600,
+            fontSize: 15,
+            fontWeight:
+            FontWeight.w600,
           ),
         ),
-        subtitle: subtitle == null
+        subtitle:
+        subtitle == null
             ? null
-            : Text(subtitle),
+            : Text(
+          subtitle,
+          style:
+          TextStyle(
+            color: Colors
+                .grey
+                .shade600,
+          ),
+        ),
         trailing: trailing,
       ),
     );
   }
 
+  // =========================================================
+  // BUILD
+  // =========================================================
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor:
-      const Color(0xFFF5F6FF),
-
+      background,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        backgroundColor:
+        Colors.transparent,
         elevation: 0,
+        surfaceTintColor:
+        Colors.transparent,
+        foregroundColor:
+        Colors.black,
         title: const Text(
           'Settings',
           style: TextStyle(
-            fontWeight: FontWeight.bold,
+            fontWeight:
+            FontWeight.bold,
           ),
         ),
       ),
-
       body: ListView(
         padding:
         const EdgeInsets.all(20),
         children: [
-          /// ACCOUNT
-          const Text(
-            'Account',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight:
-              FontWeight.bold,
-            ),
+          // PROFILE CARD
+          buildProfileCard(),
+
+          const SizedBox(
+            height: 28,
           ),
 
-          const SizedBox(height: 14),
+          // ACCOUNT
+          buildSectionTitle(
+            'Account',
+          ),
 
           buildTile(
             icon: Icons.person,
-            title: 'Profile',
+            title:
+            'Edit Profile',
             subtitle:
-            'Manage your profile',
+            'Update your personal information',
             trailing: const Icon(
-              Icons.arrow_forward_ios,
+              Icons
+                  .arrow_forward_ios,
               size: 16,
             ),
+            onTap:
+            openEditProfile,
           ),
 
           buildTile(
-            icon: Icons.lock,
-            title: 'Privacy',
+            icon:
+            Icons.star_border,
+            title:
+            'Starred Messages',
             subtitle:
-            'Privacy and security',
+            'View saved messages',
             trailing: const Icon(
-              Icons.arrow_forward_ios,
+              Icons
+                  .arrow_forward_ios,
               size: 16,
             ),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder:
+                      (_) =>
+                  const StarredMessagesScreen(),
+                ),
+              );
+            },
           ),
 
           buildTile(
-            icon: Icons.storage,
-            title: 'Storage',
+            icon: Icons.block,
+            title:
+            'Blocked Users',
             subtitle:
-            'Manage app storage',
+            'Manage blocked contacts',
             trailing: const Icon(
-              Icons.arrow_forward_ios,
+              Icons
+                  .arrow_forward_ios,
               size: 16,
             ),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder:
+                      (_) =>
+                  const BlockedUsersScreen(),
+                ),
+              );
+            },
           ),
 
-          const SizedBox(height: 24),
+          const SizedBox(
+            height: 24,
+          ),
 
-          /// CHAT SETTINGS
-          const Text(
+          // CHAT SETTINGS
+          buildSectionTitle(
             'Chat Settings',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight:
-              FontWeight.bold,
-            ),
           ),
-
-          const SizedBox(height: 14),
 
           buildTile(
             icon:
             Icons.notifications,
-            title: 'Notifications',
+            title:
+            'Notifications',
+            subtitle:
+            'Message alerts and sounds',
             trailing: Switch(
-              value: notifications,
-              onChanged: (value) {
+              value:
+              notifications,
+              activeThumbColor:
+              primary,
+              onChanged: (
+                  value,
+                  ) {
                 setState(() {
                   notifications =
                       value;
@@ -184,11 +601,20 @@ class _SettingsScreenState
           ),
 
           buildTile(
-            icon: Icons.done_all,
-            title: 'Read Receipts',
+            icon:
+            Icons.done_all,
+            title:
+            'Read Receipts',
+            subtitle:
+            'Show when messages are read',
             trailing: Switch(
-              value: readReceipts,
-              onChanged: (value) {
+              value:
+              readReceipts,
+              activeThumbColor:
+              primary,
+              onChanged: (
+                  value,
+                  ) {
                 setState(() {
                   readReceipts =
                       value;
@@ -198,59 +624,89 @@ class _SettingsScreenState
           ),
 
           buildTile(
-            icon: Icons.dark_mode,
-            title: 'Dark Mode',
+            icon:
+            Icons.dark_mode,
+            title:
+            'Dark Mode',
+            subtitle:
+            'Coming soon',
             trailing: Switch(
               value: darkMode,
-              onChanged: (value) {
+              activeThumbColor:
+              primary,
+              onChanged: (
+                  value,
+                  ) {
                 setState(() {
-                  darkMode = value;
+                  darkMode =
+                      value;
                 });
+
+                showMessage(
+                  'Dark mode will be available soon.',
+                );
               },
             ),
           ),
 
-          const SizedBox(height: 24),
-
-          /// SUPPORT
-          const Text(
-            'Support',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight:
-              FontWeight.bold,
-            ),
+          const SizedBox(
+            height: 24,
           ),
 
-          const SizedBox(height: 14),
+          // SUPPORT
+          buildSectionTitle(
+            'Support',
+          ),
 
           buildTile(
-            icon: Icons.help,
-            title: 'Help Center',
+            icon: Icons
+                .email_outlined,
+            title:
+            'Contact Support',
+            subtitle:
+            'Send us an email',
             trailing: const Icon(
-              Icons.arrow_forward_ios,
+              Icons
+                  .arrow_forward_ios,
               size: 16,
             ),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder:
+                      (_) =>
+                  const EmailScreen(),
+                ),
+              );
+            },
           ),
 
           buildTile(
-            icon: Icons.info,
-            title: 'About Nimo',
+            icon:
+            Icons.info_outline,
+            title:
+            'About NIMO',
             subtitle:
             'Version 1.0.0',
           ),
 
-          const SizedBox(height: 30),
+          const SizedBox(
+            height: 30,
+          ),
 
-          /// LOGOUT
+          // LOGOUT BUTTON
           SizedBox(
             height: 56,
-            child: ElevatedButton.icon(
-              onPressed: logout,
+            child:
+            ElevatedButton.icon(
+              onPressed:
+              confirmLogout,
               style:
               ElevatedButton.styleFrom(
                 backgroundColor:
                 Colors.red,
+                elevation: 0,
                 shape:
                 RoundedRectangleBorder(
                   borderRadius:
@@ -261,18 +717,25 @@ class _SettingsScreenState
               ),
               icon: const Icon(
                 Icons.logout,
-                color: Colors.white,
+                color:
+                Colors.white,
               ),
               label: const Text(
                 'Logout',
                 style: TextStyle(
-                  color: Colors.white,
+                  color:
+                  Colors.white,
                   fontWeight:
-                  FontWeight.bold,
+                  FontWeight
+                      .bold,
                   fontSize: 16,
                 ),
               ),
             ),
+          ),
+
+          const SizedBox(
+            height: 20,
           ),
         ],
       ),

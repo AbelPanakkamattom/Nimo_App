@@ -16,6 +16,9 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState
     extends State<HomeScreen> {
+  static const Color primary =
+  Color(0xFF6C5CE7);
+
   int currentIndex = 0;
 
   final List<Widget> screens =
@@ -27,37 +30,32 @@ class _HomeScreenState
     ProfileScreen(),
   ];
 
-  final List<_BottomItem>
-  items = const [
+  final List<_BottomItem> items =
+  const [
     _BottomItem(
-      icon: Icons.chat_bubble_rounded,
-      label: "Chats",
+      icon:
+      Icons.chat_bubble_rounded,
+      label: 'Chats',
     ),
-
     _BottomItem(
       icon: Icons.email_rounded,
-      label: "Email",
+      label: 'Email',
     ),
-
     _BottomItem(
       icon: Icons.call_rounded,
-      label: "Calls",
+      label: 'Calls',
     ),
-
     _BottomItem(
-      icon: Icons.auto_awesome_rounded,
-      label: "AI",
+      icon:
+      Icons.auto_awesome_rounded,
+      label: 'AI',
     ),
-
     _BottomItem(
-      icon: Icons.person_rounded,
-      label: "Profile",
+      icon:
+      Icons.person_rounded,
+      label: 'Profile',
     ),
   ];
-
-  /// =========================
-  /// 🔄 CHANGE TAB
-  /// =========================
 
   void changeTab(int index) {
     if (currentIndex == index) {
@@ -69,53 +67,133 @@ class _HomeScreenState
     });
   }
 
-  /// =========================
-  /// UI
-  /// =========================
+  VoidCallback? _buildFabAction() {
+    switch (currentIndex) {
+      case 0:
+        return () {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Start a new chat',
+              ),
+              behavior:
+              SnackBarBehavior
+                  .floating,
+            ),
+          );
+        };
+
+      case 1:
+        return () {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Compose email',
+              ),
+              behavior:
+              SnackBarBehavior
+                  .floating,
+            ),
+          );
+        };
+
+      case 2:
+        return () {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Start a call',
+              ),
+              behavior:
+              SnackBarBehavior
+                  .floating,
+            ),
+          );
+        };
+
+      case 3:
+        return () {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Ask NIMO AI',
+              ),
+              behavior:
+              SnackBarBehavior
+                  .floating,
+            ),
+          );
+        };
+
+      default:
+        return null;
+    }
+  }
+
+  IconData _buildFabIcon() {
+    switch (currentIndex) {
+      case 0:
+        return Icons.edit_rounded;
+      case 1:
+        return Icons.add_rounded;
+      case 2:
+        return Icons.call_rounded;
+      case 3:
+        return Icons.auto_awesome_rounded;
+      default:
+        return Icons.add_rounded;
+    }
+  }
+
+  bool get _showFab {
+    return currentIndex != 4;
+  }
 
   @override
-  Widget build(BuildContext context) {
-    const primary =
-    Color(0xFF6C5CE7);
-
+  Widget build(
+      BuildContext context,
+      ) {
     return Scaffold(
       backgroundColor:
-      const Color(0xFFF5F6FF),
-
+      const Color(
+        0xFFF5F6FF,
+      ),
       extendBody: true,
-
-      /// =========================
-      /// 📱 MAIN CONTENT
-      /// =========================
 
       body: Stack(
         children: [
-          /// 🔥 BACKGROUND
           Container(
             decoration:
             const BoxDecoration(
               gradient:
               LinearGradient(
                 colors: [
-                  Color(0xFFF7F8FF),
-                  Color(0xFFEDE9FF),
+                  Color(
+                    0xFFF7F8FF,
+                  ),
+                  Color(
+                    0xFFEDE9FF,
+                  ),
                 ],
                 begin:
-                Alignment.topCenter,
+                Alignment
+                    .topCenter,
                 end: Alignment
                     .bottomCenter,
               ),
             ),
           ),
 
-          /// 🔥 SCREENS
           SafeArea(
             child: Padding(
               padding:
               const EdgeInsets.only(
-                bottom: 95,
+                bottom: 100,
               ),
-
               child: IndexedStack(
                 index: currentIndex,
                 children: screens,
@@ -125,9 +203,20 @@ class _HomeScreenState
         ],
       ),
 
-      /// =========================
-      /// 🔻 BOTTOM NAVIGATION
-      /// =========================
+      floatingActionButton:
+      _showFab
+          ? FloatingActionButton(
+        onPressed:
+        _buildFabAction(),
+        backgroundColor:
+        primary,
+        foregroundColor:
+        Colors.white,
+        child: Icon(
+          _buildFabIcon(),
+        ),
+      )
+          : null,
 
       bottomNavigationBar:
       SafeArea(
@@ -137,33 +226,24 @@ class _HomeScreenState
           right: 14,
           bottom: 14,
         ),
-
         child: Container(
           padding:
           const EdgeInsets.symmetric(
             horizontal: 10,
             vertical: 10,
           ),
-
-          decoration:
-          BoxDecoration(
-            color:
-            Colors.white.withValues(
-              alpha: 0.97,
-            ),
-
+          decoration: BoxDecoration(
+            color: Colors.white
+                .withAlpha(245),
             borderRadius:
             BorderRadius.circular(
               32,
             ),
-
             boxShadow: [
               BoxShadow(
                 color: Colors.black
-                    .withValues(
-                  alpha: 0.08,
-                ),
-                blurRadius: 18,
+                    .withAlpha(18),
+                blurRadius: 20,
                 offset:
                 const Offset(
                   0,
@@ -172,12 +252,10 @@ class _HomeScreenState
               ),
             ],
           ),
-
           child: Row(
             mainAxisAlignment:
             MainAxisAlignment
                 .spaceAround,
-
             children:
             List.generate(
               items.length,
@@ -188,16 +266,15 @@ class _HomeScreenState
 
                 return InkWell(
                   borderRadius:
-                  BorderRadius.circular(
+                  BorderRadius
+                      .circular(
                     24,
                   ),
-
                   onTap: () {
                     changeTab(
                       index,
                     );
                   },
-
                   child:
                   AnimatedContainer(
                     duration:
@@ -205,62 +282,58 @@ class _HomeScreenState
                       milliseconds:
                       250,
                     ),
-
                     curve: Curves
                         .easeInOut,
-
                     padding:
                     EdgeInsets.symmetric(
                       horizontal:
                       active
                           ? 16
                           : 12,
-                      vertical: 10,
+                      vertical:
+                      10,
                     ),
-
                     decoration:
                     BoxDecoration(
-                      color: active
+                      color:
+                      active
                           ? primary
                           : Colors
                           .transparent,
-
                       borderRadius:
-                      BorderRadius.circular(
+                      BorderRadius
+                          .circular(
                         22,
                       ),
                     ),
-
                     child: Row(
                       children: [
                         Icon(
                           items[index]
                               .icon,
-
                           size: 22,
-
-                          color: active
+                          color:
+                          active
                               ? Colors
                               .white
                               : Colors
                               .grey
                               .shade600,
                         ),
-
                         if (active)
                           ...[
                             const SizedBox(
-                              width: 7,
+                              width:
+                              7,
                             ),
-
                             Text(
-                              items[index]
+                              items[
+                              index]
                                   .label,
-
                               style:
                               const TextStyle(
-                                color: Colors
-                                    .white,
+                                color:
+                                Colors.white,
                                 fontWeight:
                                 FontWeight.w600,
                                 fontSize:
@@ -280,10 +353,6 @@ class _HomeScreenState
     );
   }
 }
-
-/// =====================================
-/// 🔻 BOTTOM ITEM MODEL
-/// =====================================
 
 class _BottomItem {
   final IconData icon;

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../services/profile_service.dart';
 import 'auth_screen.dart';
 import 'blocked_users_screen.dart';
 import 'edit_profile_screen.dart';
@@ -15,19 +16,26 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState
     extends State<ProfileScreen> {
+  static const Color primary =
+  Color(0xFF6C5CE7);
+  static const Color secondary =
+  Color(0xFF8E7BFF);
+  static const Color background =
+  Color(0xFFF5F6FF);
+
   final SupabaseClient client =
       Supabase.instance.client;
 
-  static const Color primary =
-  Color(0xFF6C5CE7);
-
   Map<String, dynamic>? profile;
-
   bool loading = true;
 
   int chatsCount = 0;
-  int mediaCount = 0;
   int callsCount = 0;
+  int mediaCount = 0;
+
+  // =========================================================
+  // INIT
+  // =========================================================
 
   @override
   void initState() {
@@ -35,84 +43,165 @@ class _ProfileScreenState
     loadProfile();
   }
 
-  /// ======================================
-  /// LOAD PROFILE
-  /// ======================================
+  // =========================================================
+  // LOAD PROFILE
+  // =========================================================
 
   Future<void> loadProfile() async {
-    final user =
-        client.auth.currentUser;
+    if (!mounted) return;
 
-    if (user == null) {
-      if (!mounted) return;
-
-      setState(() {
-        loading = false;
-      });
-
-      return;
-    }
+    setState(() {
+      loading = true;
+    });
 
     try {
-      final profileData =
-      await client
-          .from('profiles')
-          .select()
-          .eq('id', user.id)
-          .maybeSingle();
+      final user =
+          client.auth.currentUser;
 
-      final messages =
-      await client
-          .from('messages')
-          .select();
-
-      int chats = 0;
-      int media = 0;
-
-      final uniqueChats =
-      <String>{};
-
-      for (final msg in messages) {
-        final sender =
-        msg['sender_id'];
-        final receiver =
-        msg['receiver_id'];
-
-        if (sender == user.id ||
-            receiver == user.id) {
-          final other =
-          sender == user.id
-              ? receiver
-              : sender;
-
-          uniqueChats.add(
-            other.toString(),
-          );
-
-          final type =
-              msg['type']
-                  ?.toString() ??
-                  'text';
-
-          if (type == 'image' ||
-              type == 'audio') {
-            media++;
-          }
-        }
+      if (user == null) {
+        if (!mounted) return;
+        setState(() {
+          loading = false;
+        });
+        return;
       }
 
-      chats = uniqueChats.length;
+      // Ensure profile exists
+      await ProfileService
+          .createProfileIfNotExists();
+
+      // Load profile
+      final profileData =
+      await ProfileService
+          .getMyProfile();
+
+      final safeProfile =
+          profileData ??
+              {
+                'id': user.id,
+                'email':
+                user.email ??
+                    '',
+                'name':
+                user
+                    .userMetadata?['name']
+                    ?.toString() ??
+                    user.email
+                        ?.split('@')
+                        .first ??
+                    'NIMO User',
+                'bio':
+                user
+                    .userMetadata?['bio']
+                    ?.toString() ??
+                    '',
+                'description':
+                user
+                    .userMetadata?['bio']
+                    ?.toString() ??
+                    '',
+                'avatar_url':
+                user
+                    .userMetadata?['avatar_url']
+                    ?.toString() ??
+                    '',
+              };
+
+      // Load message statistics
+      int totalChats = 0;
+      int totalMedia = 0;
+
+      try {
+        final messages =
+        await client
+            .from('messages')
+            .select(
+          'sender_id, receiver_id, type, message_type',
+        );
+
+        final uniqueChats =
+        <String>{};
+
+        for (final message
+        in messages) {
+          final senderId =
+          message['sender_id']
+              ?.toString();
+          final receiverId =
+          message['receiver_id']
+              ?.toString();
+
+          if (senderId ==
+              null ||
+              receiverId ==
+                  null) {
+            continue;
+          }
+
+          if (senderId ==
+              user.id ||
+              receiverId ==
+                  user.id) {
+            final otherUserId =
+            senderId ==
+                user.id
+                ? receiverId
+                : senderId;
+
+            uniqueChats.add(
+              otherUserId,
+            );
+
+            final type =
+            (message['type'] ??
+                message['message_type'] ??
+                'text')
+                .toString()
+                .toLowerCase();
+
+            if (type ==
+                'image' ||
+                type ==
+                    'video' ||
+                type ==
+                    'audio' ||
+                type ==
+                    'document' ||
+                type ==
+                    'file') {
+              totalMedia++;
+            }
+          }
+        }
+
+        totalChats =
+            uniqueChats.length;
+      } catch (e) {
+        debugPrint(
+          'STATS ERROR: $e',
+        );
+      }
 
       if (!mounted) return;
 
       setState(() {
-        profile = profileData;
-        chatsCount = chats;
-        mediaCount = media;
+        profile =
+        Map<String,
+            dynamic>.from(
+          safeProfile,
+        );
+        chatsCount =
+            totalChats;
         callsCount = 0;
+        mediaCount =
+            totalMedia;
         loading = false;
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint(
+        'LOAD PROFILE ERROR: $e',
+      );
+
       if (!mounted) return;
 
       setState(() {
@@ -125,85 +214,100 @@ class _ProfileScreenState
           content: Text(
             'Failed to load profile',
           ),
+          behavior:
+          SnackBarBehavior
+              .floating,
         ),
       );
     }
   }
 
-  /// ======================================
-  /// LOGOUT
-  /// ======================================
+  // =========================================================
+  // LOGOUT
+  // =========================================================
 
   Future<void> logout() async {
-    final navigator =
-    Navigator.of(context);
-
-    await client.auth.signOut();
+    try {
+      await client.auth.signOut();
+    } catch (_) {}
 
     if (!mounted) return;
 
-    navigator.pushAndRemoveUntil(
+    Navigator.pushAndRemoveUntil(
+      context,
       MaterialPageRoute(
-        builder: (_) =>
+        builder:
+            (_) =>
         const AuthScreen(),
       ),
-          (route) => false,
+          (_) => false,
     );
   }
 
-  /// ======================================
-  /// DELETE ACCOUNT
-  /// ======================================
+  // =========================================================
+  // DELETE ACCOUNT
+  // =========================================================
 
   Future<void> deleteAccount() async {
     final confirmed =
     await showDialog<bool>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text(
-            'Delete Account',
-          ),
-          content: const Text(
-            'This action is permanent.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(
-                  dialogContext,
-                  false,
-                );
-              },
-              child:
-              const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(
-                  dialogContext,
-                  true,
-                );
-              },
-              child: const Text(
-                'Delete',
-                style: TextStyle(
-                  color: Colors.red,
-                ),
+      builder:
+          (dialogContext) =>
+          AlertDialog(
+            shape:
+            RoundedRectangleBorder(
+              borderRadius:
+              BorderRadius.circular(
+                24,
               ),
             ),
-          ],
-        );
-      },
+            title: const Text(
+              'Delete Account',
+            ),
+            content: const Text(
+              'This action is permanent and cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed:
+                    () => Navigator.pop(
+                  dialogContext,
+                  false,
+                ),
+                child: const Text(
+                  'Cancel',
+                ),
+              ),
+              TextButton(
+                onPressed:
+                    () => Navigator.pop(
+                  dialogContext,
+                  true,
+                ),
+                child: const Text(
+                  'Delete',
+                  style: TextStyle(
+                    color:
+                    Colors.red,
+                  ),
+                ),
+              ),
+            ],
+          ),
     );
 
-    if (confirmed != true) return;
+    if (confirmed != true) {
+      return;
+    }
 
     try {
       final user =
           client.auth.currentUser;
 
-      if (user == null) return;
+      if (user == null) {
+        return;
+      }
 
       await client
           .from('profiles')
@@ -217,12 +321,17 @@ class _ProfileScreenState
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(
-          builder: (_) =>
+          builder:
+              (_) =>
           const AuthScreen(),
         ),
-            (route) => false,
+            (_) => false,
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint(
+        'DELETE ACCOUNT ERROR: $e',
+      );
+
       if (!mounted) return;
 
       ScaffoldMessenger.of(context)
@@ -231,27 +340,42 @@ class _ProfileScreenState
           content: Text(
             'Failed to delete account',
           ),
+          behavior:
+          SnackBarBehavior
+              .floating,
         ),
       );
     }
   }
 
-  /// ======================================
-  /// OPEN EDIT
-  /// ======================================
-
-  Future<void>
-  openEditProfile() async {
+  // =========================================================
+  // OPEN EDIT PROFILE
+  // =========================================================
+  Future<void> openEditProfile() async {
     if (profile == null) return;
 
-    final result =
-    await Navigator.push(
+    final result = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) =>
-            EditProfileScreen(
-              profile: profile!,
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 250),
+        reverseTransitionDuration: const Duration(milliseconds: 250),
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return Scaffold(
+            resizeToAvoidBottomInset: true,
+            body: SafeArea(
+              child: EditProfileScreen(
+                profile: profile!,
+              ),
             ),
+          );
+        },
+        transitionsBuilder:
+            (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: child,
+          );
+        },
       ),
     );
 
@@ -260,90 +384,339 @@ class _ProfileScreenState
     }
   }
 
-  /// ======================================
-  /// BLOCKED USERS
-  /// ======================================
+  // =========================================================
+  // OPEN BLOCKED USERS
+  // =========================================================
 
   void openBlockedUsers() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) =>
+        builder:
+            (_) =>
         const BlockedUsersScreen(),
       ),
     );
   }
 
-  /// ======================================
-  /// AVATAR
-  /// ======================================
+  // =========================================================
+  // AVATAR
+  // =========================================================
 
   Widget buildAvatar() {
-    final avatar =
+    final avatarUrl =
         profile?['avatar_url']
             ?.toString() ??
             '';
 
-    if (avatar.isNotEmpty) {
-      return CircleAvatar(
-        radius: 58,
-        backgroundImage:
-        NetworkImage(avatar),
+    if (avatarUrl.isNotEmpty) {
+      return Container(
+        padding:
+        const EdgeInsets.all(
+          4,
+        ),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color:
+              Colors.black
+                  .withAlpha(
+                20,
+              ),
+              blurRadius: 20,
+              offset:
+              const Offset(
+                0,
+                8,
+              ),
+            ),
+          ],
+        ),
+        child: CircleAvatar(
+          radius: 58,
+          backgroundColor:
+          Colors.white,
+          backgroundImage:
+          NetworkImage(
+            avatarUrl,
+          ),
+        ),
       );
     }
 
     final name =
-        profile?['name']
-            ?.toString() ??
-            'U';
+    (profile?['name'] ??
+        'NIMO User')
+        .toString()
+        .trim();
 
-    return CircleAvatar(
-      radius: 58,
-      backgroundColor: primary,
-      child: Text(
-        name[0].toUpperCase(),
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 38,
-          fontWeight:
-          FontWeight.bold,
+    final initial =
+    name.isNotEmpty
+        ? name[0]
+        .toUpperCase()
+        : 'N';
+
+    return Container(
+      padding:
+      const EdgeInsets.all(
+        4,
+      ),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color:
+            Colors.black
+                .withAlpha(
+              20,
+            ),
+            blurRadius: 20,
+            offset:
+            const Offset(
+              0,
+              8,
+            ),
+          ),
+        ],
+      ),
+      child: CircleAvatar(
+        radius: 58,
+        backgroundColor:
+        Colors.white,
+        child: Text(
+          initial,
+          style:
+          const TextStyle(
+            color: primary,
+            fontSize: 38,
+            fontWeight:
+            FontWeight
+                .bold,
+          ),
         ),
       ),
     );
   }
 
-  /// ======================================
-  /// UI
-  /// ======================================
+  // =========================================================
+  // STAT CARD
+  // =========================================================
+
+  Widget buildStatCard({
+    required String title,
+    required int value,
+    required IconData icon,
+  }) {
+    return Expanded(
+      child: Container(
+        padding:
+        const EdgeInsets
+            .symmetric(
+          vertical: 20,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius:
+          BorderRadius.circular(
+            22,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color:
+              Colors.black
+                  .withAlpha(
+                10,
+              ),
+              blurRadius: 12,
+              offset:
+              const Offset(
+                0,
+                4,
+              ),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              color: primary,
+              size: 24,
+            ),
+            const SizedBox(
+              height: 10,
+            ),
+            Text(
+              value.toString(),
+              style:
+              const TextStyle(
+                fontSize: 24,
+                fontWeight:
+                FontWeight
+                    .bold,
+              ),
+            ),
+            const SizedBox(
+              height: 4,
+            ),
+            Text(
+              title,
+              style: TextStyle(
+                color: Colors
+                    .grey
+                    .shade600,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // =========================================================
+  // SETTING TILE
+  // =========================================================
+
+  Widget buildSettingTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    Color iconColor = primary,
+    Color iconBackground =
+    const Color(0xFFF0EDFF),
+  }) {
+    return Container(
+      margin:
+      const EdgeInsets.only(
+        bottom: 14,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius:
+        BorderRadius.circular(
+          22,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color:
+            Colors.black
+                .withAlpha(
+              8,
+            ),
+            blurRadius: 12,
+            offset:
+            const Offset(
+              0,
+              4,
+            ),
+          ),
+        ],
+      ),
+      child: ListTile(
+        onTap: onTap,
+        contentPadding:
+        const EdgeInsets
+            .symmetric(
+          horizontal: 16,
+          vertical: 6,
+        ),
+        leading: Container(
+          width: 46,
+          height: 46,
+          decoration:
+          BoxDecoration(
+            color:
+            iconBackground,
+            borderRadius:
+            BorderRadius.circular(
+              14,
+            ),
+          ),
+          child: Icon(
+            icon,
+            color: iconColor,
+          ),
+        ),
+        title: Text(
+          title,
+          style:
+          const TextStyle(
+            fontSize: 15,
+            fontWeight:
+            FontWeight.w600,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(
+            color: Colors
+                .grey
+                .shade600,
+            fontSize: 13,
+          ),
+        ),
+        trailing: const Icon(
+          Icons
+              .arrow_forward_ios_rounded,
+          size: 16,
+        ),
+      ),
+    );
+  }
+
+  // =========================================================
+  // BUILD
+  // =========================================================
 
   @override
-  Widget build(BuildContext context) {
-    final username =
-        profile?['name'] ??
-            profile?['username'] ??
-            'User';
+  Widget build(
+      BuildContext context,
+      ) {
+    final userName =
+    (profile?['name'] ??
+        'NIMO User')
+        .toString();
 
-    final email =
-        profile?['email'] ?? '';
+    final userEmail =
+    (profile?['email'] ??
+        '')
+        .toString();
+
+    final about =
+    (profile?['bio'] ??
+        profile?['description'] ??
+        '')
+        .toString()
+        .trim();
 
     return Scaffold(
       backgroundColor:
-      const Color(0xFFF5F6FF),
-
-      body: loading
+      background,
+      body:
+      loading
           ? const Center(
         child:
-        CircularProgressIndicator(),
+        CircularProgressIndicator(
+          color:
+          primary,
+        ),
       )
           : RefreshIndicator(
-        onRefresh: loadProfile,
+        color: primary,
+        onRefresh:
+        loadProfile,
         child:
         SingleChildScrollView(
           physics:
           const AlwaysScrollableScrollPhysics(),
           child: Column(
             children: [
-              /// HEADER
+              // HEADER
               Container(
                 width:
                 double.infinity,
@@ -360,19 +733,25 @@ class _ProfileScreenState
                   LinearGradient(
                     colors: [
                       primary,
-                      Color(
-                        0xFF8E7BFF,
-                      ),
+                      secondary,
                     ],
+                    begin:
+                    Alignment
+                        .topLeft,
+                    end:
+                    Alignment
+                        .bottomRight,
                   ),
                   borderRadius:
                   BorderRadius.only(
                     bottomLeft:
                     Radius.circular(
-                        34),
+                      34,
+                    ),
                     bottomRight:
                     Radius.circular(
-                        34),
+                      34,
+                    ),
                   ),
                 ),
                 child: Column(
@@ -386,13 +765,12 @@ class _ProfileScreenState
                           'Profile',
                           style:
                           TextStyle(
-                            color: Colors
-                                .white,
+                            color:
+                            Colors.white,
                             fontSize:
                             28,
                             fontWeight:
-                            FontWeight
-                                .bold,
+                            FontWeight.bold,
                           ),
                         ),
                         IconButton(
@@ -401,67 +779,107 @@ class _ProfileScreenState
                           icon:
                           const Icon(
                             Icons.logout,
-                            color: Colors
-                                .white,
+                            color:
+                            Colors.white,
                           ),
                         ),
                       ],
                     ),
-
                     const SizedBox(
                       height: 20,
                     ),
-
                     buildAvatar(),
-
                     const SizedBox(
                       height: 16,
                     ),
-
                     Text(
-                      username,
+                      userName,
+                      textAlign:
+                      TextAlign.center,
                       style:
                       const TextStyle(
                         color:
                         Colors.white,
-                        fontSize: 28,
+                        fontSize:
+                        28,
                         fontWeight:
-                        FontWeight
-                            .bold,
+                        FontWeight.bold,
                       ),
                     ),
-
                     const SizedBox(
                       height: 6,
                     ),
-
                     Text(
-                      email,
-                      style: TextStyle(
-                        color: Colors
-                            .white
-                            .withValues(
-                          alpha: 0.9,
-                        ),
+                      userEmail,
+                      textAlign:
+                      TextAlign.center,
+                      style:
+                      const TextStyle(
+                        color:
+                        Colors.white70,
                       ),
                     ),
-
+                    if (about
+                        .isNotEmpty) ...[
+                      const SizedBox(
+                        height:
+                        14,
+                      ),
+                      Container(
+                        width:
+                        double.infinity,
+                        padding:
+                        const EdgeInsets.symmetric(
+                          horizontal:
+                          14,
+                          vertical:
+                          12,
+                        ),
+                        decoration:
+                        BoxDecoration(
+                          color:
+                          Colors.white.withAlpha(
+                            35,
+                          ),
+                          borderRadius:
+                          BorderRadius.circular(
+                            16,
+                          ),
+                        ),
+                        child:
+                        Text(
+                          about,
+                          textAlign:
+                          TextAlign.center,
+                          style:
+                          const TextStyle(
+                            color:
+                            Colors.white,
+                            fontSize:
+                            14,
+                            fontStyle:
+                            FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(
                       height: 20,
                     ),
-
                     SizedBox(
-                      width: 190,
-                      height: 48,
+                      width:
+                      190,
+                      height:
+                      48,
                       child:
-                      ElevatedButton
-                          .icon(
+                      ElevatedButton.icon(
                         onPressed:
                         openEditProfile,
                         icon:
                         const Icon(
                           Icons.edit,
-                          size: 18,
+                          size:
+                          18,
                         ),
                         label:
                         const Text(
@@ -470,8 +888,7 @@ class _ProfileScreenState
                         style:
                         ElevatedButton.styleFrom(
                           backgroundColor:
-                          Colors
-                              .white,
+                          Colors.white,
                           foregroundColor:
                           primary,
                           elevation:
@@ -491,80 +908,92 @@ class _ProfileScreenState
               ),
 
               const SizedBox(
-                  height: 24),
+                height: 24,
+              ),
 
-              /// STATS
+              // STATS
               Padding(
                 padding:
                 const EdgeInsets.symmetric(
-                  horizontal: 16,
+                  horizontal:
+                  16,
                 ),
                 child: Row(
                   children: [
-                    Expanded(
-                      child: statCard(
-                        'Chats',
-                        chatsCount
-                            .toString(),
-                        Icons.chat,
-                      ),
+                    buildStatCard(
+                      title:
+                      'Chats',
+                      value:
+                      chatsCount,
+                      icon:
+                      Icons.chat,
                     ),
                     const SizedBox(
-                        width: 12),
-                    Expanded(
-                      child: statCard(
-                        'Calls',
-                        callsCount
-                            .toString(),
-                        Icons.call,
-                      ),
+                      width:
+                      12,
+                    ),
+                    buildStatCard(
+                      title:
+                      'Calls',
+                      value:
+                      callsCount,
+                      icon:
+                      Icons.call,
                     ),
                     const SizedBox(
-                        width: 12),
-                    Expanded(
-                      child: statCard(
-                        'Media',
-                        mediaCount
-                            .toString(),
-                        Icons.image,
-                      ),
+                      width:
+                      12,
+                    ),
+                    buildStatCard(
+                      title:
+                      'Media',
+                      value:
+                      mediaCount,
+                      icon:
+                      Icons.image,
                     ),
                   ],
                 ),
               ),
 
               const SizedBox(
-                  height: 24),
+                height: 24,
+              ),
 
-              /// SETTINGS
+              // SETTINGS
               Padding(
                 padding:
                 const EdgeInsets.symmetric(
-                  horizontal: 16,
+                  horizontal:
+                  16,
                 ),
-                child: Column(
+                child:
+                Column(
                   children: [
-                    settingTile(
+                    buildSettingTile(
                       icon:
                       Icons.lock,
                       title:
                       'Privacy',
                       subtitle:
                       'Manage your privacy',
-                      onTap: () {
+                      onTap:
+                          () {
                         ScaffoldMessenger.of(
-                            context)
-                            .showSnackBar(
+                          context,
+                        ).showSnackBar(
                           const SnackBar(
-                            content: Text(
+                            content:
+                            Text(
                               'Coming soon',
                             ),
+                            behavior:
+                            SnackBarBehavior.floating,
                           ),
                         );
                       },
                     ),
-
-                    settingTile(
+                    buildSettingTile(
                       icon:
                       Icons.block,
                       title:
@@ -574,35 +1003,42 @@ class _ProfileScreenState
                       onTap:
                       openBlockedUsers,
                     ),
-
-                    settingTile(
+                    buildSettingTile(
                       icon:
                       Icons.help,
                       title:
                       'Help & Support',
                       subtitle:
                       'Report issues',
-                      onTap: () {
+                      onTap:
+                          () {
                         ScaffoldMessenger.of(
-                            context)
-                            .showSnackBar(
+                          context,
+                        ).showSnackBar(
                           const SnackBar(
-                            content: Text(
+                            content:
+                            Text(
                               'Coming soon',
                             ),
+                            behavior:
+                            SnackBarBehavior.floating,
                           ),
                         );
                       },
                     ),
-
-                    settingTile(
+                    buildSettingTile(
                       icon:
                       Icons.delete,
                       title:
                       'Delete Account',
                       subtitle:
                       'Permanent delete',
-                      color: Colors.red,
+                      iconColor:
+                      Colors.red,
+                      iconBackground:
+                      const Color(
+                        0xFFFFEBEE,
+                      ),
                       onTap:
                       deleteAccount,
                     ),
@@ -611,29 +1047,56 @@ class _ProfileScreenState
               ),
 
               const SizedBox(
-                  height: 30),
+                height: 30,
+              ),
 
-              /// LOGOUT BUTTON
+              // LOGOUT BUTTON
               Padding(
                 padding:
                 const EdgeInsets.symmetric(
-                  horizontal: 16,
+                  horizontal:
+                  16,
                 ),
-                child: SizedBox(
+                child:
+                SizedBox(
                   width:
                   double.infinity,
-                  height: 56,
+                  height:
+                  56,
                   child:
-                  ElevatedButton
-                      .icon(
-                    onPressed: logout,
-                    icon: const Icon(
-                      Icons.logout,
+                  ElevatedButton.icon(
+                    onPressed:
+                    logout,
+                    icon:
+                    const Icon(
+                      Icons
+                          .logout,
                     ),
-                    label: const Text(
+                    label:
+                    const Text(
                       'Logout',
-                      style: TextStyle(
-                        fontSize: 16,
+                      style:
+                      TextStyle(
+                        fontSize:
+                        16,
+                        fontWeight:
+                        FontWeight.bold,
+                      ),
+                    ),
+                    style:
+                    ElevatedButton.styleFrom(
+                      backgroundColor:
+                      primary,
+                      foregroundColor:
+                      Colors.white,
+                      elevation:
+                      0,
+                      shape:
+                      RoundedRectangleBorder(
+                        borderRadius:
+                        BorderRadius.circular(
+                          18,
+                        ),
                       ),
                     ),
                   ),
@@ -641,175 +1104,11 @@ class _ProfileScreenState
               ),
 
               const SizedBox(
-                  height: 40),
+                height: 40,
+              ),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  /// ======================================
-  /// SETTINGS TILE
-  /// ======================================
-
-  Widget settingTile({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-    Color color = primary,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius:
-      BorderRadius.circular(20),
-      child: Container(
-        margin:
-        const EdgeInsets.only(
-          bottom: 14,
-        ),
-        padding:
-        const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius:
-          BorderRadius.circular(
-              20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black
-                  .withValues(
-                alpha: 0.04,
-              ),
-              blurRadius: 10,
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 50,
-              height: 50,
-              decoration:
-              BoxDecoration(
-                color:
-                color.withValues(
-                  alpha: 0.12,
-                ),
-                borderRadius:
-                BorderRadius.circular(
-                    15),
-              ),
-              child: Icon(
-                icon,
-                color: color,
-              ),
-            ),
-
-            const SizedBox(
-                width: 14),
-
-            Expanded(
-              child: Column(
-                crossAxisAlignment:
-                CrossAxisAlignment
-                    .start,
-                children: [
-                  Text(
-                    title,
-                    style:
-                    const TextStyle(
-                      fontSize: 16,
-                      fontWeight:
-                      FontWeight
-                          .w600,
-                    ),
-                  ),
-
-                  const SizedBox(
-                      height: 4),
-
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors
-                          .grey.shade600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const Icon(
-              Icons
-                  .arrow_forward_ios_rounded,
-              size: 16,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// ======================================
-  /// STAT CARD
-  /// ======================================
-
-  Widget statCard(
-      String title,
-      String value,
-      IconData icon,
-      ) {
-    return Container(
-      padding:
-      const EdgeInsets.symmetric(
-        vertical: 20,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius:
-        BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black
-                .withValues(
-              alpha: 0.04,
-            ),
-            blurRadius: 10,
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Icon(
-            icon,
-            color: primary,
-          ),
-
-          const SizedBox(
-              height: 10),
-
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight:
-              FontWeight.bold,
-            ),
-          ),
-
-          const SizedBox(height: 4),
-
-          Text(
-            title,
-            style: TextStyle(
-              color:
-              Colors.grey.shade600,
-            ),
-          ),
-        ],
       ),
     );
   }

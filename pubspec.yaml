@@ -13,93 +13,86 @@ dependencies:
     sdk: flutter
 
   # =====================================
-  # 🎨 UI
+  # UI
   # =====================================
-
   cupertino_icons: ^1.0.8
 
   # =====================================
-  # 🔥 SUPABASE
+  # SUPABASE
   # =====================================
-
   supabase_flutter: ^2.5.6
   flutter_dotenv: ^6.0.1
 
   # =====================================
-  # 🔐 AUTH
+  # AUTHENTICATION
   # =====================================
-
   google_sign_in: ^6.2.1
 
   # =====================================
-  # 📸 MEDIA
+  # MEDIA
   # =====================================
-
   image_picker: ^1.1.2
   record: ^6.0.0
   just_audio: ^0.9.39
   file_picker: ^8.0.7
 
   # =====================================
-  # 📁 STORAGE & FILES
+  # FILE HANDLING
   # =====================================
-
   path_provider: ^2.1.4
   path: ^1.9.0
+  open_filex: ^4.4.0
 
   # =====================================
-  # 🌐 INTERNET
+  # INTERNET
   # =====================================
-
   connectivity_plus: ^6.0.5
+  http: ^1.2.2
 
   # =====================================
-  # 🔐 PERMISSIONS
+  # PERMISSIONS
   # =====================================
-
   permission_handler: ^11.3.1
 
   # =====================================
-  # 📤 SHARE
+  # SHARE
   # =====================================
-
   share_plus: ^10.0.2
 
   # =====================================
-  # 🖼 CACHED IMAGES
+  # CACHED IMAGES
   # =====================================
-
   cached_network_image: ^3.4.1
 
   # =====================================
-  # 🎞 ANIMATIONS
+  # ANIMATIONS
   # =====================================
-
   flutter_animate: ^4.5.0
 
   # =====================================
-  # 📅 TIME FORMAT
+  # DATE AND TIME
   # =====================================
-
   intl: ^0.19.0
 
   # =====================================
-  # 🔊 AUDIO VISUAL
+  # AUDIO WAVEFORM UI
   # =====================================
-
   audio_waveforms: ^1.1.0
 
   # =====================================
-  # 🔔 NOTIFICATIONS
+  # NOTIFICATIONS
   # =====================================
-
   flutter_local_notifications: ^17.2.1
 
   # =====================================
-  # 🧠 STATE MANAGEMENT
+  # STATE MANAGEMENT
   # =====================================
-
   provider: ^6.1.2
+
+  # =====================================
+  # LINK HANDLING
+  # =====================================
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:
@@ -108,11 +101,13 @@ dev_dependencies:
   flutter_lints: ^6.0.0
 
   # =====================================
-  # 🎨 APP ICON
+  # APP ICON GENERATION
   # =====================================
-
   flutter_launcher_icons: ^0.14.4
 
+# =====================================
+# FLUTTER CONFIGURATION
+# =====================================
 flutter:
   uses-material-design: true
 
@@ -120,12 +115,29 @@ flutter:
     - .env
     - assets/images/
     - assets/images/nimo_logo.png
+    - assets/images/google.png
+    - assets/images/apple.png
+    - assets/images/yahoo.png
+    - assets/images/samsung.png
+    - assets/images/outlook.png
 
+# =====================================
+# APP ICON CONFIGURATION
+# =====================================
 flutter_launcher_icons:
   android: true
   ios: true
 
   image_path: "assets/images/nimo_logo.png"
 
-  adaptive_icon_background: "#6C5CE7"
+  # White background behind the logo
+  adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/images/nimo_logo.png"
+
+  remove_alpha_ios: true
+
+# =====================================
+# DEPENDENCY OVERRIDES
+# =====================================
+dependency_overrides:
+  win32: ^5.5.4

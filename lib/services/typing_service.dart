@@ -4,56 +4,76 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class TypingService {
+  TypingService._();
+
   static final SupabaseClient supabase =
       Supabase.instance.client;
 
   static Timer? _typingTimer;
 
-  /// =========================
-  /// CURRENT USER
-  /// =========================
+  /// Typing indicator remains valid for 5 seconds.
+  static const Duration typingTimeout =
+  Duration(seconds: 5);
+
+  // ==========================================
+  // CURRENT USER
+  // ==========================================
 
   static String get currentUserId =>
       supabase.auth.currentUser?.id ?? '';
 
-  /// =========================
-  /// SET TYPING
-  /// =========================
+  static bool get isLoggedIn =>
+      currentUserId.isNotEmpty;
+
+  // ==========================================
+  // SET TYPING STATUS
+  // ==========================================
 
   static Future<void> setTyping({
     required String receiverId,
     required bool typing,
   }) async {
+    if (!isLoggedIn ||
+        receiverId.trim().isEmpty) {
+      return;
+    }
+
     try {
-      final myId = currentUserId;
-
-      if (myId.isEmpty) {
-        return;
-      }
-
       await supabase
           .from('profiles')
           .update({
         'typing_to':
-        typing ? receiverId : '',
+        typing
+            ? receiverId
+            : '',
         'typing_updated_at':
         DateTime.now()
+            .toUtc()
             .toIso8601String(),
-      }).eq('id', myId);
+      })
+          .eq(
+        'id',
+        currentUserId,
+      );
     } catch (e) {
       debugPrint(
-        "SET TYPING ERROR: $e",
+        'SET TYPING ERROR: $e',
       );
     }
   }
 
-  /// =========================
-  /// START TYPING
-  /// =========================
+  // ==========================================
+  // START TYPING
+  // ==========================================
 
   static Future<void> startTyping({
     required String receiverId,
   }) async {
+    if (!isLoggedIn ||
+        receiverId.trim().isEmpty) {
+      return;
+    }
+
     try {
       await setTyping(
         receiverId: receiverId,
@@ -63,30 +83,32 @@ class TypingService {
       _typingTimer?.cancel();
 
       _typingTimer = Timer(
-        const Duration(seconds: 2),
+        typingTimeout,
             () async {
           await stopTyping();
         },
       );
     } catch (e) {
       debugPrint(
-        "START TYPING ERROR: $e",
+        'START TYPING ERROR: $e',
       );
     }
   }
 
-  /// =========================
-  /// STOP TYPING
-  /// =========================
+  // ==========================================
+  // STOP TYPING
+  // ==========================================
 
-  static Future<void> stopTyping()
-  async {
+  static Future<void> stopTyping() async {
+    if (!isLoggedIn) {
+      _typingTimer?.cancel();
+      _typingTimer = null;
+      return;
+    }
+
     try {
-      final myId = currentUserId;
-
-      if (myId.isEmpty) {
-        return;
-      }
+      _typingTimer?.cancel();
+      _typingTimer = null;
 
       await supabase
           .from('profiles')
@@ -94,72 +116,137 @@ class TypingService {
         'typing_to': '',
         'typing_updated_at':
         DateTime.now()
+            .toUtc()
             .toIso8601String(),
-      }).eq('id', myId);
+      })
+          .eq(
+        'id',
+        currentUserId,
+      );
     } catch (e) {
       debugPrint(
-        "STOP TYPING ERROR: $e",
+        'STOP TYPING ERROR: $e',
       );
     }
   }
 
-  /// =========================
-  /// TYPING STREAM
-  /// =========================
+  // ==========================================
+  // CHECK IF TIMESTAMP IS STILL VALID
+  // ==========================================
+
+  static bool _isTypingStillValid(
+      dynamic updatedAt,
+      ) {
+    if (updatedAt == null) {
+      return false;
+    }
+
+    try {
+      final timestamp =
+      DateTime.parse(
+        updatedAt.toString(),
+      ).toUtc();
+
+      final now =
+      DateTime.now().toUtc();
+
+      return now.difference(
+        timestamp,
+      ) <=
+          typingTimeout;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ==========================================
+  // TYPING STREAM
+  // ==========================================
 
   static Stream<bool> typingStream({
     required String otherUserId,
   }) {
-    final myId = currentUserId;
+    if (!isLoggedIn ||
+        otherUserId.trim().isEmpty) {
+      return Stream.value(false);
+    }
 
     return supabase
         .from('profiles')
-        .stream(primaryKey: ['id'])
+        .stream(
+      primaryKey: ['id'],
+    )
+        .eq(
+      'id',
+      otherUserId,
+    )
         .map((profiles) {
       try {
+        if (profiles.isEmpty) {
+          return false;
+        }
+
         final profile =
-        profiles.firstWhere(
-              (p) =>
-          p['id'] ==
-              otherUserId,
-        );
+            profiles.first;
 
         final typingTo =
         profile['typing_to'];
 
-        return typingTo == myId;
-      } catch (_) {
+        final updatedAt =
+        profile[
+        'typing_updated_at'];
+
+        if (typingTo !=
+            currentUserId) {
+          return false;
+        }
+
+        return _isTypingStillValid(
+          updatedAt,
+        );
+      } catch (e) {
+        debugPrint(
+          'TYPING STREAM ERROR: $e',
+        );
         return false;
       }
-    });
+    })
+        .distinct();
   }
 
-  /// =========================
-  /// TYPING TEXT
-  /// =========================
+  // ==========================================
+  // TYPING TEXT STREAM
+  // ==========================================
 
   static Stream<String> typingText({
     required String otherUserId,
   }) {
     return typingStream(
       otherUserId: otherUserId,
-    ).map((typing) {
-      if (typing) {
-        return "typing...";
-      }
-
-      return "";
-    });
+    ).map(
+          (isTyping) =>
+      isTyping
+          ? 'typing...'
+          : '',
+    );
   }
 
-  /// =========================
-  /// DISPOSE
-  /// =========================
+  // ==========================================
+  // DISPOSE
+  // ==========================================
 
-  static Future<void> dispose()
-  async {
-    _typingTimer?.cancel();
+  static Future<void> dispose() async {
+    try {
+      _typingTimer?.cancel();
+      _typingTimer = null;
 
-    await stopTyping();
+      if (isLoggedIn) {
+        await stopTyping();
+      }
+    } catch (e) {
+      debugPrint(
+        'TYPING DISPOSE ERROR: $e',
+      );
+    }
   }
 }

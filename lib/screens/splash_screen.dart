@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -9,336 +11,304 @@ class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  State<SplashScreen> createState() =>
-      _SplashScreenState();
+  State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState
-    extends State<SplashScreen>
-    with TickerProviderStateMixin {
-  final SupabaseClient supabase =
-      Supabase.instance.client;
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
+  static const Color primary = Color(0xFF6C5CE7);
 
-  late AnimationController
-  logoController;
+  final SupabaseClient supabase = Supabase.instance.client;
 
-  late Animation<double>
-  scaleAnimation;
+  late final AnimationController _controller;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<double> _scaleAnimation;
 
-  late Animation<double>
-  fadeAnimation;
-
-  bool navigating = false;
-
-  /// =========================
-  /// INIT
-  /// =========================
+  bool _navigating = false;
 
   @override
   void initState() {
     super.initState();
-
-    _initAnimation();
-
+    _setupAnimations();
     _start();
   }
 
-  /// =========================
-  /// 🎬 ANIMATION
-  /// =========================
+  // =========================================================
+  // ANIMATIONS
+  // =========================================================
+  void _setupAnimations() {
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    );
 
-  void _initAnimation() {
-    logoController =
-        AnimationController(
-          vsync: this,
-          duration:
-          const Duration(
-            milliseconds: 1200,
-          ),
-        );
+    _fadeAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOut,
+    );
 
-    scaleAnimation =
-        CurvedAnimation(
-          parent: logoController,
-          curve: Curves.easeOutBack,
-        );
-
-    fadeAnimation =
-        CurvedAnimation(
-          parent: logoController,
-          curve: Curves.easeIn,
-        );
-
-    logoController.forward();
-  }
-
-  /// =========================
-  /// 🚀 START FLOW
-  /// =========================
-
-  Future<void> _start() async {
-    await Future.delayed(
-      const Duration(
-        milliseconds: 1200,
+    _scaleAnimation = Tween<double>(
+      begin: 0.92,
+      end: 1.0,
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeOutBack,
       ),
     );
 
-    final user =
-        supabase.auth.currentUser;
+    _controller.forward();
+  }
 
-    if (!mounted) return;
-
-    /// ❌ NOT LOGGED IN
-    if (user == null) {
-      _navigate(
-        const AuthScreen(),
-      );
-      return;
-    }
-
+  // =========================================================
+  // START APP LOGIC
+  // =========================================================
+  Future<void> _start() async {
     try {
-      /// 🔍 CHECK PROFILE
-      final profile =
-      await supabase
-          .from('profiles')
-          .select()
-          .eq(
-        'id',
-        user.id,
-      )
-          .maybeSingle();
+      // Keep splash visible for at least 2.5 seconds
+      await Future.delayed(
+        const Duration(milliseconds: 2500),
+      );
+
+      final user = supabase.auth.currentUser;
 
       if (!mounted) return;
 
-      final provider =
-      user.appMetadata[
-      'provider'];
+      // Not logged in
+      if (user == null) {
+        _navigate(const AuthScreen());
+        return;
+      }
 
-      /// 🟢 GOOGLE USER
-      if (profile == null &&
-          provider == 'google') {
-        await supabase
-            .from('profiles')
-            .insert({
+      // Check if profile exists
+      final profile = await supabase
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 10));
+
+      if (!mounted) return;
+
+      final provider = user.appMetadata['provider'];
+
+      // Auto-create profile for Google sign-in
+      if (profile == null && provider == 'google') {
+        await supabase.from('profiles').insert({
           'id': user.id,
           'email': user.email,
           'name':
-          user.userMetadata?[
-          'name'] ??
+          user.userMetadata?['name'] ??
+              user.email?.split('@').first ??
               'User',
           'avatar_url':
-          user.userMetadata?[
-          'avatar_url'] ??
-              '',
-          'created_at':
-          DateTime.now()
+          user.userMetadata?['avatar_url'] ?? '',
+          'description': '',
+          'is_online': true,
+          'last_seen': DateTime.now()
+              .toUtc()
+              .toIso8601String(),
+          'created_at': DateTime.now()
+              .toUtc()
               .toIso8601String(),
         });
 
-        _navigate(
-          const HomeScreen(),
-        );
+        if (!mounted) return;
 
+        _navigate(const HomeScreen());
         return;
       }
 
-      /// 🟡 EMAIL USER
+      // Registered user without profile
       if (profile == null) {
         _navigate(
           RegisterScreen(
-            email:
-            user.email ?? '',
+            email: user.email ?? '',
           ),
         );
-
         return;
       }
 
-      /// ✅ READY
-      _navigate(
-        const HomeScreen(),
-      );
+      // Existing user
+      _navigate(const HomeScreen());
+    } on TimeoutException {
+      if (!mounted) return;
+      _navigate(const AuthScreen());
     } catch (e) {
-      debugPrint(
-        "SPLASH ERROR: $e",
-      );
+      debugPrint('SPLASH ERROR: $e');
 
-      _navigate(
-        const AuthScreen(),
-      );
+      if (!mounted) return;
+      _navigate(const AuthScreen());
     }
   }
 
-  /// =========================
-  /// 🔥 SAFE NAVIGATION
-  /// =========================
+  // =========================================================
+  // NAVIGATION
+  // =========================================================
+  void _navigate(Widget screen) {
+    if (!mounted || _navigating) return;
 
-  void _navigate(
-      Widget screen,
-      ) {
-    if (!mounted ||
-        navigating) {
-      return;
-    }
-
-    navigating = true;
+    _navigating = true;
 
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
         builder: (_) => screen,
       ),
-          (_) => false,
+          (route) => false,
     );
   }
 
-  /// =========================
-  /// UI
-  /// =========================
-
-  @override
-  Widget build(BuildContext context) {
-    const primary =
-    Color(0xFF6C5CE7);
-
-    return Scaffold(
-      backgroundColor:
-      const Color(0xFFF5F6FF),
-
-      body: Container(
-        width: double.infinity,
-        decoration:
-        const BoxDecoration(
-          gradient:
-          LinearGradient(
-            colors: [
-              Color(0xFFF7F8FF),
-              Color(0xFFEDE9FF),
+  // =========================================================
+  // PREMIUM LOGO
+  // =========================================================
+  Widget _buildLogo() {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // Soft glow behind logo
+        Container(
+          width: 190,
+          height: 190,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: primary.withValues(alpha: 0.22),
+                blurRadius: 70,
+                spreadRadius: 15,
+              ),
             ],
-            begin:
-            Alignment.topCenter,
-            end: Alignment
-                .bottomCenter,
           ),
         ),
 
+        // Glass circle background
+        Container(
+          width: 170,
+          height: 170,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: const LinearGradient(
+              colors: [
+                Color(0xFFFFFFFF),
+                Color(0xFFF8F6FF),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.9),
+              width: 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.white.withValues(alpha: 0.75),
+                blurRadius: 18,
+                spreadRadius: 2,
+              ),
+              BoxShadow(
+                color: primary.withValues(alpha: 0.12),
+                blurRadius: 30,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+        ),
+
+        // Logo image
+        SizedBox(
+          width: 120,
+          height: 120,
+          child: Image.asset(
+            'assets/images/nimo_logo.png',
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) {
+              return const Icon(
+                Icons.auto_awesome,
+                size: 90,
+                color: primary,
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // =========================================================
+  // BUILD
+  // =========================================================
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF6F4FF),
+      body: Container(
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0, -0.15),
+            radius: 1.15,
+            colors: [
+              Color(0xFFFFFFFF),
+              Color(0xFFF7F5FF),
+              Color(0xFFF1EDFF),
+              Color(0xFFEAE4FF),
+            ],
+          ),
+        ),
         child: SafeArea(
           child: Center(
             child: FadeTransition(
-              opacity: fadeAnimation,
-
+              opacity: _fadeAnimation,
               child: ScaleTransition(
-                scale:
-                scaleAnimation,
-
+                scale: _scaleAnimation,
                 child: Column(
-                  mainAxisAlignment:
-                  MainAxisAlignment
-                      .center,
-
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    /// 🔥 LOGO
-                    Container(
-                      width: 110,
-                      height: 110,
+                    // Premium Logo
+                    _buildLogo(),
 
-                      decoration:
-                      BoxDecoration(
-                        gradient:
-                        const LinearGradient(
-                          colors: [
-                            Color(
-                              0xFF7B61FF,
-                            ),
-                            Color(
-                              0xFF6C5CE7,
-                            ),
-                          ],
-                          begin:
-                          Alignment
-                              .topLeft,
-                          end:
-                          Alignment
-                              .bottomRight,
-                        ),
+                    const SizedBox(height: 44),
 
-                        shape:
-                        BoxShape
-                            .circle,
-
-                        boxShadow: [
-                          BoxShadow(
-                            color: primary
-                                .withValues(
-                              alpha:
-                              0.25,
-                            ),
-                            blurRadius:
-                            25,
-                            offset:
-                            const Offset(
-                              0,
-                              10,
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      child:
-                      const Icon(
-                        Icons.chat_bubble_rounded,
-                        size: 52,
-                        color: Colors
-                            .white,
-                      ),
-                    ),
-
-                    const SizedBox(
-                      height: 28,
-                    ),
-
-                    /// 🔥 APP NAME
+                    // App Name
                     const Text(
-                      "NIMO",
+                      'NIMO',
                       style: TextStyle(
-                        fontSize: 34,
-                        fontWeight:
-                        FontWeight
-                            .bold,
-                        letterSpacing:
-                        1.2,
+                        fontSize: 52,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 7,
+                        color: Color(0xFF151515),
                       ),
                     ),
 
-                    const SizedBox(
-                      height: 10,
-                    ),
+                    const SizedBox(height: 16),
 
+                    // Tagline
                     Text(
-                      "Secure realtime messaging",
+                      'Connect • Communicate • Create',
                       style: TextStyle(
-                        color: Colors
-                            .grey
-                            .shade700,
-                        fontSize: 15,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.8,
+                        color: Colors.grey.shade600,
                       ),
                     ),
 
-                    const SizedBox(
-                      height: 40,
-                    ),
+                    const SizedBox(height: 52),
 
-                    /// 🔄 LOADER
+                    // Premium Loader
                     SizedBox(
-                      width: 26,
-                      height: 26,
-
-                      child:
-                      CircularProgressIndicator(
-                        strokeWidth:
-                        2.8,
-                        color:
-                        primary,
+                      width: 34,
+                      height: 34,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.8,
+                        strokeCap: StrokeCap.round,
+                        valueColor:
+                        const AlwaysStoppedAnimation<Color>(
+                          primary,
+                        ),
+                        backgroundColor:
+                        primary.withValues(alpha: 0.08),
                       ),
                     ),
                   ],
@@ -351,14 +321,12 @@ class _SplashScreenState
     );
   }
 
-  /// =========================
-  /// DISPOSE
-  /// =========================
-
+  // =========================================================
+  // DISPOSE
+  // =========================================================
   @override
   void dispose() {
-    logoController.dispose();
-
+    _controller.dispose();
     super.dispose();
   }
 }

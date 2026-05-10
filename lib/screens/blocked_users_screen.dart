@@ -14,23 +14,46 @@ class _BlockedUsersScreenState
   final SupabaseClient client =
       Supabase.instance.client;
 
-  List<Map<String, dynamic>>
-  blockedUsers = [];
+  static const Color primary =
+  Color(0xFF6C5CE7);
+
+  List<Map<String, dynamic>> blockedUsers =
+  [];
 
   bool loading = true;
 
-  String get myId =>
-      client.auth.currentUser!.id;
+  String? get myId =>
+      client.auth.currentUser?.id;
 
-  /// =====================================
-  /// 🚫 LOAD BLOCKED USERS
-  /// =====================================
+  @override
+  void initState() {
+    super.initState();
+    loadBlockedUsers();
+  }
+
+  // ==========================================
+  // LOAD BLOCKED USERS
+  // ==========================================
 
   Future<void> loadBlockedUsers() async {
+    final userId = myId;
+
+    if (userId == null) {
+      if (mounted) {
+        setState(() {
+          blockedUsers = [];
+          loading = false;
+        });
+      }
+      return;
+    }
+
     try {
-      setState(() {
-        loading = true;
-      });
+      if (mounted) {
+        setState(() {
+          loading = true;
+        });
+      }
 
       final blockedResponse =
       await client
@@ -38,17 +61,21 @@ class _BlockedUsersScreenState
           .select()
           .eq(
         'blocker_id',
-        myId,
+        userId,
       );
 
-      final List<
-          Map<String, dynamic>>
+      final List<Map<String, dynamic>>
       loadedUsers = [];
 
       for (final item
       in blockedResponse) {
         final blockedId =
-        item['blocked_id'];
+        item['blocked_id']
+            ?.toString();
+
+        if (blockedId == null) {
+          continue;
+        }
 
         final profile =
         await client
@@ -72,109 +99,229 @@ class _BlockedUsersScreenState
       if (!mounted) return;
 
       setState(() {
-        blockedUsers =
-            loadedUsers;
+        blockedUsers = loadedUsers;
+        loading = false;
       });
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Failed to load blocked users",
-          ),
-        ),
-      );
-    }
-
-    if (mounted) {
       setState(() {
         loading = false;
       });
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Failed to load blocked users',
+          ),
+          behavior:
+          SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
-  /// =====================================
-  /// 🔓 UNBLOCK USER
-  /// =====================================
+  // ==========================================
+  // UNBLOCK USER
+  // ==========================================
 
   Future<void> unblockUser(
       String blockedId,
       ) async {
+    final userId = myId;
+
+    if (userId == null) return;
+
+    final confirmed =
+    await showDialog<bool>(
+      context: context,
+      builder: (_) {
+        return AlertDialog(
+          shape:
+          RoundedRectangleBorder(
+            borderRadius:
+            BorderRadius.circular(
+              24,
+            ),
+          ),
+          title:
+          const Text('Unblock User'),
+          content: const Text(
+            'Do you want to unblock this user?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(
+                  context,
+                  false,
+                );
+              },
+              child:
+              const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style:
+              ElevatedButton.styleFrom(
+                backgroundColor:
+                Colors.red,
+              ),
+              onPressed: () {
+                Navigator.pop(
+                  context,
+                  true,
+                );
+              },
+              child: const Text(
+                'Unblock',
+                style: TextStyle(
+                  color:
+                  Colors.white,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
     try {
       await client
           .from('blocked_users')
           .delete()
           .match({
-        'blocker_id': myId,
-        'blocked_id':
-        blockedId,
+        'blocker_id': userId,
+        'blocked_id': blockedId,
       });
-
-      blockedUsers.removeWhere(
-            (user) =>
-        user['id'] ==
-            blockedId,
-      );
 
       if (!mounted) return;
 
-      setState(() {});
+      setState(() {
+        blockedUsers.removeWhere(
+              (user) =>
+          user['id']
+              .toString() ==
+              blockedId,
+        );
+      });
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
+      ScaffoldMessenger.of(context)
+          .showSnackBar(
         const SnackBar(
-          content: Text(
-            "User unblocked",
-          ),
+          content:
+          Text('User unblocked'),
+          behavior:
+          SnackBarBehavior.floating,
         ),
       );
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(
         const SnackBar(
           content: Text(
-            "Failed to unblock user",
+            'Failed to unblock user',
           ),
+          behavior:
+          SnackBarBehavior.floating,
         ),
       );
     }
   }
 
-  /// =====================================
-  /// 🚀 INIT
-  /// =====================================
+  // ==========================================
+  // EMPTY STATE
+  // ==========================================
 
-  @override
-  void initState() {
-    super.initState();
-    loadBlockedUsers();
+  Widget buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding:
+        const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment:
+          MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 100,
+              height: 100,
+              decoration:
+              BoxDecoration(
+                color: Colors.red
+                    .withAlpha(20),
+                shape:
+                BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.block,
+                size: 48,
+                color: Colors.red,
+              ),
+            ),
+            const SizedBox(
+              height: 24,
+            ),
+            const Text(
+              'No Blocked Users',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight:
+                FontWeight.bold,
+              ),
+            ),
+            const SizedBox(
+              height: 8,
+            ),
+            Text(
+              'Users you block will appear here.',
+              textAlign:
+              TextAlign.center,
+              style: TextStyle(
+                color: Colors
+                    .grey.shade600,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
-  /// =====================================
-  /// 👤 USER TILE
-  /// =====================================
+  // ==========================================
+  // USER TILE
+  // ==========================================
 
   Widget buildUserTile(
       Map<String, dynamic> user,
       ) {
-    final avatar =
-    user['avatar_url']
-        ?.toString();
+    final avatarUrl =
+        user['avatar_url']
+            ?.toString() ??
+            '';
 
     final name =
         user['name']
             ?.toString() ??
+            user['username']
+                ?.toString() ??
             'User';
 
     final email =
         user['email']
             ?.toString() ??
             '';
+
+    final initial =
+    name.trim().isNotEmpty
+        ? name
+        .trim()[0]
+        .toUpperCase()
+        : 'U';
 
     return Container(
       margin:
@@ -185,7 +332,8 @@ class _BlockedUsersScreenState
       const EdgeInsets.all(
         14,
       ),
-      decoration: BoxDecoration(
+      decoration:
+      BoxDecoration(
         color: Colors.white,
         borderRadius:
         BorderRadius.circular(
@@ -194,42 +342,37 @@ class _BlockedUsersScreenState
         boxShadow: [
           BoxShadow(
             color: Colors.black
-                .withValues(
-              alpha: 0.04,
-            ),
-            blurRadius: 8,
+                .withAlpha(8),
+            blurRadius: 12,
+            offset:
+            const Offset(0, 4),
           ),
         ],
       ),
       child: Row(
         children: [
-          /// 👤 AVATAR
-          avatar != null &&
-              avatar.isNotEmpty
+          // AVATAR
+          avatarUrl.isNotEmpty
               ? CircleAvatar(
             radius: 28,
+            backgroundColor:
+            Colors.grey
+                .shade200,
             backgroundImage:
             NetworkImage(
-              avatar,
+              avatarUrl,
             ),
           )
               : CircleAvatar(
             radius: 28,
             backgroundColor:
-            const Color(
-              0xFF6C5CE7,
-            ),
+            primary,
             child: Text(
-              name
-                  .substring(
-                0,
-                1,
-              )
-                  .toUpperCase(),
+              initial,
               style:
               const TextStyle(
-                color:
-                Colors.white,
+                color: Colors
+                    .white,
                 fontSize: 20,
                 fontWeight:
                 FontWeight
@@ -238,11 +381,9 @@ class _BlockedUsersScreenState
             ),
           ),
 
-          const SizedBox(
-            width: 14,
-          ),
+          const SizedBox(width: 14),
 
-          /// 👤 INFO
+          // INFO
           Expanded(
             child: Column(
               crossAxisAlignment:
@@ -259,32 +400,40 @@ class _BlockedUsersScreenState
                         .bold,
                   ),
                 ),
-
-                const SizedBox(
-                  height: 4,
-                ),
-
-                Text(
-                  email,
-                  overflow:
-                  TextOverflow
-                      .ellipsis,
-                  style: TextStyle(
-                    color: Colors
-                        .grey
-                        .shade600,
-                    fontSize: 13,
+                if (email.isNotEmpty)
+                  Padding(
+                    padding:
+                    const EdgeInsets
+                        .only(
+                      top: 4,
+                    ),
+                    child: Text(
+                      email,
+                      overflow:
+                      TextOverflow
+                          .ellipsis,
+                      style:
+                      TextStyle(
+                        color: Colors
+                            .grey
+                            .shade600,
+                        fontSize:
+                        13,
+                      ),
+                    ),
                   ),
-                ),
               ],
             ),
           ),
 
-          /// 🔓 BUTTON
+          const SizedBox(width: 8),
+
+          // UNBLOCK BUTTON
           ElevatedButton(
             onPressed: () =>
                 unblockUser(
-                  user['id'],
+                  user['id']
+                      .toString(),
                 ),
             style:
             ElevatedButton.styleFrom(
@@ -292,9 +441,10 @@ class _BlockedUsersScreenState
               Colors.red,
               foregroundColor:
               Colors.white,
+              elevation: 0,
               padding:
               const EdgeInsets.symmetric(
-                horizontal: 18,
+                horizontal: 16,
                 vertical: 10,
               ),
               shape:
@@ -306,7 +456,7 @@ class _BlockedUsersScreenState
               ),
             ),
             child: const Text(
-              "Unblock",
+              'Unblock',
             ),
           ),
         ],
@@ -314,9 +464,9 @@ class _BlockedUsersScreenState
     );
   }
 
-  /// =====================================
-  /// 🎨 UI
-  /// =====================================
+  // ==========================================
+  // BUILD
+  // ==========================================
 
   @override
   Widget build(
@@ -324,82 +474,50 @@ class _BlockedUsersScreenState
       ) {
     return Scaffold(
       backgroundColor:
-      const Color(
-        0xFFF5F6FF,
-      ),
-
+      const Color(0xFFF5F6FF),
       appBar: AppBar(
-        elevation: 0,
         backgroundColor:
         Colors.transparent,
+        elevation: 0,
+        surfaceTintColor:
+        Colors.transparent,
+        foregroundColor:
+        Colors.black,
         title: const Text(
-          "Blocked Users",
+          'Blocked Users',
           style: TextStyle(
             fontWeight:
             FontWeight.bold,
           ),
         ),
       ),
-
-      body:
-      loading
+      body: loading
           ? const Center(
         child:
-        CircularProgressIndicator(),
-      )
-          : blockedUsers.isEmpty
-          ? Center(
-        child: Column(
-          mainAxisAlignment:
-          MainAxisAlignment
-              .center,
-          children: [
-            Icon(
-              Icons.block,
-              size: 80,
-              color: Colors
-                  .grey
-                  .shade400,
-            ),
-
-            const SizedBox(
-              height: 16,
-            ),
-
-            Text(
-              "No blocked users",
-              style: TextStyle(
-                fontSize: 18,
-                color: Colors
-                    .grey
-                    .shade700,
-                fontWeight:
-                FontWeight
-                    .w500,
-              ),
-            ),
-          ],
+        CircularProgressIndicator(
+          color: primary,
         ),
       )
+          : blockedUsers.isEmpty
+          ? buildEmptyState()
           : RefreshIndicator(
+        color: primary,
         onRefresh:
         loadBlockedUsers,
-        child: ListView(
+        child: ListView.builder(
           padding:
           const EdgeInsets.all(
             18,
           ),
-          children:
-          blockedUsers
-              .map(
-                (
-                user,
-                ) =>
-                buildUserTile(
-                  user,
-                ),
-          )
-              .toList(),
+          itemCount:
+          blockedUsers.length,
+          itemBuilder:
+              (context, index) {
+            return buildUserTile(
+              blockedUsers[
+              index],
+            );
+          },
         ),
       ),
     );

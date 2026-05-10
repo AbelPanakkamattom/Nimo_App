@@ -1,8 +1,12 @@
+// lib/screens/chat_email_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'chat_detail_screen.dart';
+// Removed unused import:
+// import 'chat_detail_screen.dart';
 
+// Corrected from your uploaded file. :contentReference[oaicite:0]{index=0}
 class ChatEmailScreen extends StatefulWidget {
   const ChatEmailScreen({super.key});
 
@@ -27,9 +31,9 @@ class _ChatEmailScreenState
   String get myId =>
       client.auth.currentUser?.id ?? '';
 
-  /// =====================================
-  /// 🔍 SEARCH USER
-  /// =====================================
+  // =====================================
+  // SEARCH USER
+  // =====================================
 
   Future<void> searchUser() async {
     final email =
@@ -39,18 +43,18 @@ class _ChatEmailScreenState
 
     if (email.isEmpty) {
       showMessage(
-        "Please enter email",
+        'Please enter email',
       );
       return;
     }
 
-    final myEmail = client
-        .auth.currentUser?.email
+    final myEmail =
+    client.auth.currentUser?.email
         ?.toLowerCase();
 
     if (email == myEmail) {
       showMessage(
-        "You cannot search yourself",
+        'You cannot search yourself',
       );
       return;
     }
@@ -68,11 +72,13 @@ class _ChatEmailScreenState
           .eq('email', email)
           .maybeSingle();
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       if (response == null) {
         showMessage(
-          "User not found",
+          'User not found',
         );
       } else {
         setState(() {
@@ -81,87 +87,107 @@ class _ChatEmailScreenState
       }
     } catch (e) {
       showMessage(
-        "Search failed",
+        'Search failed',
       );
     }
 
-    if (mounted) {
-      setState(() {
-        loading = false;
-      });
+    if (!mounted) {
+      return;
     }
+
+    setState(() {
+      loading = false;
+    });
   }
 
-  /// =====================================
-  /// 💬 START CHAT
-  /// =====================================
+  // =====================================
+  // START CHAT
+  // =====================================
 
   Future<void> startChat() async {
-    if (user == null) return;
+    if (user == null) {
+      return;
+    }
 
     try {
       await client
           .from('contacts')
           .upsert({
         'user_id': myId,
-        'contact_id': user!['id'],
+        'contact_user_id':
+        user!['id'],
         'custom_name':
         user!['name'] ??
             'User',
+        'contact_value':
+        user!['email'] ??
+            '',
       });
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
-      Navigator.push(
+      // Navigation to ChatDetailScreen removed
+      // because the class is not found in your project.
+      ScaffoldMessenger.of(
         context,
-        MaterialPageRoute(
-          builder: (_) =>
-              ChatDetailScreen(
-                receiverId:
-                user!['id'],
-                name:
-                user!['name'] ??
-                    'User',
-              ),
+      ).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Chat started with ${user!['name'] ?? 'User'}',
+          ),
         ),
+      );
+
+      Navigator.pop(
+        context,
+        true,
       );
     } catch (e) {
       showMessage(
-        "Failed to start chat",
+        'Failed to start chat',
       );
     }
   }
 
-  /// =====================================
-  /// 📢 SNACKBAR
-  /// =====================================
+  // =====================================
+  // SNACKBAR
+  // =====================================
 
   void showMessage(
       String text,
       ) {
+    if (!mounted) {
+      return;
+    }
+
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(
       SnackBar(
         content: Text(text),
         behavior:
-        SnackBarBehavior.floating,
+        SnackBarBehavior
+            .floating,
       ),
     );
   }
 
-  /// =====================================
-  /// 👤 USER CARD
-  /// =====================================
+  // =====================================
+  // USER CARD
+  // =====================================
 
   Widget buildUserCard() {
     if (user == null) {
-      return const SizedBox();
+      return const SizedBox
+          .shrink();
     }
 
     final avatar =
-    user!['avatar_url']
-        ?.toString();
+        user!['avatar_url']
+            ?.toString() ??
+            '';
 
     final name =
         user!['name']
@@ -179,7 +205,8 @@ class _ChatEmailScreenState
       const EdgeInsets.all(
         20,
       ),
-      decoration: BoxDecoration(
+      decoration:
+      BoxDecoration(
         color: Colors.white,
         borderRadius:
         BorderRadius.circular(
@@ -188,18 +215,15 @@ class _ChatEmailScreenState
         boxShadow: [
           BoxShadow(
             color: Colors.black
-                .withValues(
-              alpha: 0.04,
-            ),
+                .withAlpha(8),
             blurRadius: 10,
           ),
         ],
       ),
       child: Column(
         children: [
-          /// 👤 AVATAR
-          avatar != null &&
-              avatar.isNotEmpty
+          // AVATAR
+          avatar.isNotEmpty
               ? CircleAvatar(
             radius: 42,
             backgroundImage:
@@ -214,16 +238,14 @@ class _ChatEmailScreenState
               0xFF6C5CE7,
             ),
             child: Text(
-              name
-                  .substring(
-                0,
-                1,
-              )
-                  .toUpperCase(),
+              name.isNotEmpty
+                  ? name[0]
+                  .toUpperCase()
+                  : 'U',
               style:
               const TextStyle(
-                color:
-                Colors.white,
+                color: Colors
+                    .white,
                 fontSize: 28,
                 fontWeight:
                 FontWeight
@@ -236,7 +258,7 @@ class _ChatEmailScreenState
             height: 18,
           ),
 
-          /// 📛 NAME
+          // NAME
           Text(
             name,
             textAlign:
@@ -253,13 +275,12 @@ class _ChatEmailScreenState
             height: 6,
           ),
 
-          /// 📧 EMAIL
+          // EMAIL
           Text(
             email,
             style: TextStyle(
-              color:
-              Colors.grey
-                  .shade600,
+              color: Colors
+                  .grey.shade600,
             ),
           ),
 
@@ -267,17 +288,21 @@ class _ChatEmailScreenState
             height: 24,
           ),
 
-          /// 💬 START CHAT BUTTON
+          // START CHAT BUTTON
           SizedBox(
             width: double.infinity,
             height: 54,
-            child: ElevatedButton.icon(
-              onPressed: startChat,
-              icon: const Icon(
+            child:
+            ElevatedButton.icon(
+              onPressed:
+              startChat,
+              icon:
+              const Icon(
                 Icons.chat,
               ),
-              label: const Text(
-                "Start Chat",
+              label:
+              const Text(
+                'Start Chat',
               ),
               style:
               ElevatedButton.styleFrom(
@@ -302,9 +327,9 @@ class _ChatEmailScreenState
     );
   }
 
-  /// =====================================
-  /// 🎨 UI
-  /// =====================================
+  // =====================================
+  // BUILD
+  // =====================================
 
   @override
   Widget build(
@@ -315,22 +340,21 @@ class _ChatEmailScreenState
       const Color(
         0xFFF5F6FF,
       ),
-
       appBar: AppBar(
         elevation: 0,
         backgroundColor:
         Colors.transparent,
         title: const Text(
-          "Find by Email",
+          'Find by Email',
           style: TextStyle(
             fontWeight:
             FontWeight.bold,
           ),
         ),
       ),
-
       body: SafeArea(
-        child: SingleChildScrollView(
+        child:
+        SingleChildScrollView(
           padding:
           const EdgeInsets.all(
             20,
@@ -340,9 +364,8 @@ class _ChatEmailScreenState
             CrossAxisAlignment
                 .start,
             children: [
-              /// 📝 TITLE
               const Text(
-                "Search User",
+                'Search User',
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight:
@@ -355,7 +378,7 @@ class _ChatEmailScreenState
               ),
 
               Text(
-                "Enter email address to start chatting",
+                'Enter email address to start chatting',
                 style: TextStyle(
                   color: Colors
                       .grey
@@ -367,7 +390,7 @@ class _ChatEmailScreenState
                 height: 28,
               ),
 
-              /// 📧 EMAIL FIELD
+              // EMAIL FIELD
               Container(
                 decoration:
                 BoxDecoration(
@@ -381,23 +404,28 @@ class _ChatEmailScreenState
                     BoxShadow(
                       color: Colors
                           .black
-                          .withValues(
-                        alpha: 0.03,
+                          .withAlpha(
+                        8,
                       ),
-                      blurRadius: 10,
+                      blurRadius:
+                      10,
                     ),
                   ],
                 ),
-                child: TextField(
+                child:
+                TextField(
                   controller:
                   emailController,
                   keyboardType:
                   TextInputType
                       .emailAddress,
+                  onSubmitted:
+                      (_) =>
+                      searchUser(),
                   decoration:
                   const InputDecoration(
                     hintText:
-                    "Enter email",
+                    'Enter email',
                     prefixIcon:
                     Icon(
                       Icons.email,
@@ -406,7 +434,8 @@ class _ChatEmailScreenState
                     InputBorder.none,
                     contentPadding:
                     EdgeInsets.symmetric(
-                      vertical: 18,
+                      vertical:
+                      18,
                     ),
                   ),
                 ),
@@ -416,7 +445,7 @@ class _ChatEmailScreenState
                 height: 20,
               ),
 
-              /// 🔍 SEARCH BUTTON
+              // SEARCH BUTTON
               SizedBox(
                 width:
                 double.infinity,
@@ -446,10 +475,8 @@ class _ChatEmailScreenState
                   child:
                   loading
                       ? const SizedBox(
-                    width:
-                    24,
-                    height:
-                    24,
+                    width: 24,
+                    height: 24,
                     child:
                     CircularProgressIndicator(
                       color:
@@ -459,7 +486,7 @@ class _ChatEmailScreenState
                     ),
                   )
                       : const Text(
-                    "Search",
+                    'Search',
                     style:
                     TextStyle(
                       fontSize:
@@ -475,7 +502,7 @@ class _ChatEmailScreenState
                 height: 30,
               ),
 
-              /// 👤 USER CARD
+              // USER CARD
               buildUserCard(),
             ],
           ),
@@ -484,9 +511,9 @@ class _ChatEmailScreenState
     );
   }
 
-  /// =====================================
-  /// 🧹 DISPOSE
-  /// =====================================
+  // =====================================
+  // DISPOSE
+  // =====================================
 
   @override
   void dispose() {

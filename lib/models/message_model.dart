@@ -16,33 +16,26 @@ enum MessageStatus {
 
 class Message {
   final String id;
-
   final String senderId;
   final String receiverId;
-
   final String content;
 
   final MessageType type;
   final MessageStatus status;
-
   final DateTime createdAt;
 
-  /// 🔥 FUTURE FEATURES
+  final String? mediaUrl;
+  final String? originalFileName;
+  final String? mimeType;
+
   final bool isDeleted;
   final bool isEdited;
   final bool isStarred;
   final bool isForwarded;
 
-  /// 🔁 REPLY
   final String? replyToMessageId;
-
-  /// 📎 MEDIA
-  final String? mediaUrl;
   final String? thumbnailUrl;
-
-  /// ❤️ REACTION READY
-  final Map<String, dynamic>?
-  reactions;
+  final Map<String, dynamic>? reactions;
 
   const Message({
     required this.id,
@@ -52,422 +45,445 @@ class Message {
     required this.type,
     required this.status,
     required this.createdAt,
-
+    this.mediaUrl,
+    this.originalFileName,
+    this.mimeType,
     this.isDeleted = false,
     this.isEdited = false,
     this.isStarred = false,
     this.isForwarded = false,
-
     this.replyToMessageId,
-
-    this.mediaUrl,
     this.thumbnailUrl,
-
     this.reactions,
   });
 
-  /// =====================================
-  /// 🔹 FROM JSON
-  /// =====================================
+  // =========================================================
+  // FROM JSON
+  // =========================================================
+  factory Message.fromJson(Map<String, dynamic> json) {
+    final id = json['id']?.toString() ??
+        DateTime.now().millisecondsSinceEpoch.toString();
 
-  factory Message.fromJson(
-      Map<String, dynamic> json,
-      ) {
-    final id =
-    json['id']?.toString();
+    final content = _cleanString(json['content']) ?? '';
 
-    if (id == null ||
-        id.isEmpty) {
-      throw Exception(
-        "Invalid message id",
-      );
-    }
+    final fileUrl = _cleanString(json['file_url']);
+    final mediaUrl = _cleanString(json['media_url']);
+    final resolvedMediaUrl = fileUrl ?? mediaUrl;
+
+    final fileName = _cleanString(json['file_name']);
+    final mimeType = _cleanString(json['mime_type']);
+
+    final messageType = _parseType(
+      json['type'] ?? json['message_type'],
+      mimeType: mimeType,
+      source: resolvedMediaUrl ?? content,
+    );
+
+    final messageStatus = _parseStatus(
+      json['status'],
+      isSeen: json['is_seen'] == true,
+    );
 
     return Message(
       id: id,
-
-      senderId:
-      json['sender_id']
-          ?.toString() ??
-          '',
-
-      receiverId:
-      json['receiver_id']
-          ?.toString() ??
-          '',
-
-      content:
-      (json['content'] ?? '')
-          .toString()
-          .trim(),
-
-      type: _parseType(
-        json['type'],
-      ),
-
-      status: _parseStatus(
-        json['status'],
-      ),
-
-      createdAt: _parseDate(
-        json['created_at'],
-      ),
-
-      isDeleted:
-      json['deleted'] ??
-          false,
-
-      isEdited:
-      json['is_edited'] ??
-          false,
-
-      isStarred:
-      json['is_starred'] ??
-          false,
-
-      isForwarded:
-      json['is_forwarded'] ??
-          false,
-
-      replyToMessageId:
-      json['reply_to']
-          ?.toString(),
-
-      mediaUrl:
-      json['media_url']
-          ?.toString(),
-
-      thumbnailUrl:
-      json['thumbnail_url']
-          ?.toString(),
-
-      reactions:
-      json['reactions'] !=
-          null
-          ? Map<String,
-          dynamic>.from(
-        json['reactions'],
-      )
+      senderId: json['sender_id']?.toString() ?? '',
+      receiverId: json['receiver_id']?.toString() ?? '',
+      content: content.isNotEmpty ? content : (fileName ?? ''),
+      type: messageType,
+      status: messageStatus,
+      createdAt: _parseDate(json['created_at']),
+      mediaUrl: resolvedMediaUrl,
+      originalFileName: fileName,
+      mimeType: mimeType,
+      isDeleted: json['deleted'] == true,
+      isEdited: json['is_edited'] == true,
+      isStarred: json['is_starred'] == true,
+      isForwarded: json['is_forwarded'] == true,
+      replyToMessageId: _cleanString(json['reply_to']),
+      thumbnailUrl: _cleanString(json['thumbnail_url']),
+      reactions: json['reactions'] != null
+          ? Map<String, dynamic>.from(json['reactions'])
           : null,
     );
   }
 
-  /// =====================================
-  /// 🔹 FROM LIST
-  /// =====================================
-
-  static List<Message> fromList(
-      List<dynamic> data,
-      ) {
+  // =========================================================
+  // FROM LIST
+  // =========================================================
+  static List<Message> fromList(List<dynamic> data) {
     try {
-      final messages =
-      data.map((e) {
-        return Message.fromJson(
-          Map<String, dynamic>.from(
-            e,
-          ),
-        );
-      }).toList();
+      final messages = data
+          .map((item) =>
+          Message.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
 
-      /// 🔥 SORT
-      messages.sort(
-            (a, b) => a.createdAt
-            .compareTo(
-          b.createdAt,
-        ),
-      );
-
-      /// 🔥 REMOVE DUPLICATES
-      final unique =
-      <String, Message>{};
-
-      for (final message
-      in messages) {
-        unique[message.id] =
-            message;
+      final unique = <String, Message>{};
+      for (final message in messages) {
+        unique[message.id] = message;
       }
 
-      return unique.values.toList();
+      final result = unique.values.toList();
+      result.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+      return result;
     } catch (_) {
       return [];
     }
   }
 
-  /// =====================================
-  /// 🔹 TO JSON
-  /// =====================================
-
+  // =========================================================
+  // TO JSON
+  // =========================================================
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-
       'sender_id': senderId,
-      'receiver_id':
-      receiverId,
-
+      'receiver_id': receiverId,
       'content': content,
-
       'type': type.name,
       'status': status.name,
-
-      'created_at':
-      createdAt
-          .toIso8601String(),
-
+      'created_at': createdAt.toUtc().toIso8601String(),
+      'file_url': mediaUrl,
+      'media_url': mediaUrl,
+      'file_name': originalFileName,
+      'mime_type': mimeType,
       'deleted': isDeleted,
       'is_edited': isEdited,
       'is_starred': isStarred,
-      'is_forwarded':
-      isForwarded,
-
-      'reply_to':
-      replyToMessageId,
-
-      'media_url': mediaUrl,
-      'thumbnail_url':
-      thumbnailUrl,
-
+      'is_forwarded': isForwarded,
+      'reply_to': replyToMessageId,
+      'thumbnail_url': thumbnailUrl,
       'reactions': reactions,
     };
   }
 
-  /// =====================================
-  /// 🔹 TYPE PARSER
-  /// =====================================
+  // =========================================================
+  // CONVENIENCE GETTERS
+  // =========================================================
+  bool isMe(String currentUserId) => senderId == currentUserId;
 
-  static MessageType _parseType(
-      dynamic value,
-      ) {
-    switch (value
-        .toString()
-        .toLowerCase()) {
-      case 'image':
-        return MessageType.image;
+  bool get isText => type == MessageType.text;
+  bool get isImage => type == MessageType.image;
+  bool get isAudio => type == MessageType.audio;
+  bool get isVideo => type == MessageType.video;
+  bool get isDocument => type == MessageType.document;
 
-      case 'audio':
-        return MessageType.audio;
+  bool get isSeen => status == MessageStatus.seen;
 
-      case 'video':
-        return MessageType.video;
+  bool get isDelivered =>
+      status == MessageStatus.delivered ||
+          status == MessageStatus.seen;
 
-      case 'document':
-        return MessageType.document;
+  bool get isSending => status == MessageStatus.sending;
+  bool get isFailed => status == MessageStatus.failed;
 
-      default:
-        return MessageType.text;
+  bool get hasMedia =>
+      mediaUrl != null && mediaUrl!.trim().isNotEmpty;
+
+  /// Always returns a non-null URL string.
+  String get resolvedUrl => mediaUrl ?? content;
+
+  /// Alias for compatibility with older code.
+  String get fileUrl => resolvedUrl;
+
+  /// Always returns a non-null file name.
+  String get fileName {
+    if (originalFileName != null &&
+        originalFileName!.trim().isNotEmpty) {
+      return originalFileName!;
     }
-  }
 
-  /// =====================================
-  /// 🔹 STATUS PARSER
-  /// =====================================
-
-  static MessageStatus
-  _parseStatus(
-      dynamic value,
-      ) {
-    switch (value
-        .toString()
-        .toLowerCase()) {
-      case 'sending':
-        return MessageStatus
-            .sending;
-
-      case 'delivered':
-        return MessageStatus
-            .delivered;
-
-      case 'seen':
-        return MessageStatus.seen;
-
-      case 'failed':
-        return MessageStatus
-            .failed;
-
-      default:
-        return MessageStatus.sent;
-    }
-  }
-
-  /// =====================================
-  /// 🔹 DATE PARSER
-  /// =====================================
-
-  static DateTime _parseDate(
-      dynamic value,
-      ) {
-    if (value == null) {
-      return DateTime.now();
+    if (content.isNotEmpty &&
+        !content.startsWith('http://') &&
+        !content.startsWith('https://')) {
+      return content;
     }
 
     try {
-      return DateTime.parse(
-        value.toString(),
-      ).toLocal();
+      final uri = Uri.parse(resolvedUrl);
+
+      if (uri.pathSegments.isEmpty) {
+        return 'file';
+      }
+
+      return Uri.decodeComponent(uri.pathSegments.last);
     } catch (_) {
-      return DateTime.now();
+      return 'file';
     }
   }
 
-  /// =====================================
-  /// 🔹 HELPERS
-  /// =====================================
+  bool get isLink {
+    final value = content.trim();
 
-  bool isMe(
-      String currentUserId,
-      ) {
-    return senderId ==
-        currentUserId;
+    final isHttp = value.startsWith('http://') ||
+        value.startsWith('https://');
+
+    if (!isHttp) return false;
+
+    if (isImage || isAudio || isVideo || isDocument) {
+      return false;
+    }
+
+    return true;
   }
 
-  bool get isSeen =>
-      status ==
-          MessageStatus.seen;
-
-  bool get isDelivered =>
-      status ==
-          MessageStatus.delivered;
-
-  bool get isSending =>
-      status ==
-          MessageStatus.sending;
-
-  bool get isFailed =>
-      status ==
-          MessageStatus.failed;
-
-  bool get hasMedia =>
-      mediaUrl != null &&
-          mediaUrl!.isNotEmpty;
-
-  bool get isReply =>
-      replyToMessageId != null;
-
-  bool get hasReactions =>
-      reactions != null &&
-          reactions!.isNotEmpty;
-
-  /// =====================================
-  /// 🕒 FORMATTED TIME
-  /// =====================================
-
+  /// Returns time like: 12:45 PM
   String get formattedTime {
-    final hour =
-    createdAt.hour > 12
-        ? createdAt.hour - 12
-        : createdAt.hour;
+    int hour = createdAt.hour % 12;
+    if (hour == 0) hour = 12;
 
-    final minute = createdAt
-        .minute
-        .toString()
-        .padLeft(2, '0');
+    final minute =
+    createdAt.minute.toString().padLeft(2, '0');
 
     final period =
-    createdAt.hour >= 12
-        ? 'PM'
-        : 'AM';
+    createdAt.hour >= 12 ? 'PM' : 'AM';
 
     return '$hour:$minute $period';
   }
 
-  /// =====================================
-  /// 🔹 COPY WITH
-  /// =====================================
-
+  // =========================================================
+  // COPY WITH
+  // =========================================================
   Message copyWith({
     String? id,
     String? senderId,
     String? receiverId,
     String? content,
-
     MessageType? type,
     MessageStatus? status,
-
     DateTime? createdAt,
-
+    String? mediaUrl,
+    String? originalFileName,
+    String? mimeType,
     bool? isDeleted,
     bool? isEdited,
     bool? isStarred,
     bool? isForwarded,
-
     String? replyToMessageId,
-
-    String? mediaUrl,
     String? thumbnailUrl,
-
-    Map<String, dynamic>?
-    reactions,
+    Map<String, dynamic>? reactions,
   }) {
     return Message(
       id: id ?? this.id,
-
-      senderId:
-      senderId ??
-          this.senderId,
-
-      receiverId:
-      receiverId ??
-          this.receiverId,
-
-      content:
-      content ??
-          this.content,
-
+      senderId: senderId ?? this.senderId,
+      receiverId: receiverId ?? this.receiverId,
+      content: content ?? this.content,
       type: type ?? this.type,
-
-      status:
-      status ?? this.status,
-
-      createdAt:
-      createdAt ??
-          this.createdAt,
-
-      isDeleted:
-      isDeleted ??
-          this.isDeleted,
-
-      isEdited:
-      isEdited ??
-          this.isEdited,
-
-      isStarred:
-      isStarred ??
-          this.isStarred,
-
-      isForwarded:
-      isForwarded ??
-          this.isForwarded,
-
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      mediaUrl: mediaUrl ?? this.mediaUrl,
+      originalFileName:
+      originalFileName ?? this.originalFileName,
+      mimeType: mimeType ?? this.mimeType,
+      isDeleted: isDeleted ?? this.isDeleted,
+      isEdited: isEdited ?? this.isEdited,
+      isStarred: isStarred ?? this.isStarred,
+      isForwarded: isForwarded ?? this.isForwarded,
       replyToMessageId:
-      replyToMessageId ??
-          this
-              .replyToMessageId,
-
-      mediaUrl:
-      mediaUrl ??
-          this.mediaUrl,
-
-      thumbnailUrl:
-      thumbnailUrl ??
-          this.thumbnailUrl,
-
-      reactions:
-      reactions ??
-          this.reactions,
+      replyToMessageId ?? this.replyToMessageId,
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      reactions: reactions ?? this.reactions,
     );
   }
 
-  /// =====================================
-  /// 🔹 DEBUG
-  /// =====================================
+  // =========================================================
+  // INTERNAL HELPERS
+  // =========================================================
+  static MessageType _parseType(
+      dynamic value, {
+        String? mimeType,
+        required String source,
+      }) {
+    final type =
+        value?.toString().toLowerCase().trim() ?? '';
+
+    switch (type) {
+      case 'image':
+        return MessageType.image;
+      case 'audio':
+        return MessageType.audio;
+      case 'video':
+        return MessageType.video;
+      case 'document':
+      case 'file':
+        return MessageType.document;
+    }
+
+    final mime = mimeType?.toLowerCase() ?? '';
+
+    if (mime.startsWith('image/')) {
+      return MessageType.image;
+    }
+
+    if (mime.startsWith('audio/')) {
+      return MessageType.audio;
+    }
+
+    if (mime.startsWith('video/')) {
+      return MessageType.video;
+    }
+
+    if (mime.isNotEmpty) {
+      return MessageType.document;
+    }
+
+    final ext = _extractExtension(source);
+
+    const imageExt = {
+      'jpg',
+      'jpeg',
+      'png',
+      'gif',
+      'webp',
+      'bmp',
+    };
+
+    const audioExt = {
+      'mp3',
+      'm4a',
+      'aac',
+      'wav',
+      'ogg',
+      'opus',
+      'webm',
+    };
+
+    const videoExt = {
+      'mp4',
+      'mov',
+      'avi',
+      'mkv',
+    };
+
+    const documentExt = {
+      'pdf',
+      'doc',
+      'docx',
+      'ppt',
+      'pptx',
+      'xls',
+      'xlsx',
+      'txt',
+      'csv',
+      'json',
+      'xml',
+      'zip',
+      'rar',
+      '7z',
+      'apk',
+    };
+
+    if (imageExt.contains(ext)) {
+      return MessageType.image;
+    }
+
+    if (audioExt.contains(ext)) {
+      return MessageType.audio;
+    }
+
+    if (videoExt.contains(ext)) {
+      return MessageType.video;
+    }
+
+    if (documentExt.contains(ext)) {
+      return MessageType.document;
+    }
+
+    return MessageType.text;
+  }
+
+  static MessageStatus _parseStatus(
+      dynamic value, {
+        bool isSeen = false,
+      }) {
+    if (isSeen) {
+      return MessageStatus.seen;
+    }
+
+    switch (value?.toString().toLowerCase()) {
+      case 'sending':
+        return MessageStatus.sending;
+      case 'sent':
+        return MessageStatus.sent;
+      case 'delivered':
+        return MessageStatus.delivered;
+      case 'seen':
+      case 'read':
+        return MessageStatus.seen;
+      case 'failed':
+        return MessageStatus.failed;
+      default:
+        return MessageStatus.sent;
+    }
+  }
+
+  static DateTime _parseDate(dynamic value) {
+    if (value == null) {
+      return DateTime.now();
+    }
+
+    try {
+      return DateTime.parse(value.toString()).toLocal();
+    } catch (_) {
+      return DateTime.now();
+    }
+  }
+
+  static String? _cleanString(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+
+    final text = value.toString().trim();
+
+    if (text.isEmpty ||
+        text.toLowerCase() == 'null') {
+      return null;
+    }
+
+    return text;
+  }
+
+  static String _extractExtension(String value) {
+    try {
+      final uri = Uri.parse(value);
+      final path = uri.path.toLowerCase();
+
+      if (!path.contains('.')) {
+        return '';
+      }
+
+      return path.split('.').last;
+    } catch (_) {
+      final lower = value.toLowerCase();
+
+      if (!lower.contains('.')) {
+        return '';
+      }
+
+      return lower.split('.').last;
+    }
+  }
+
+  // =========================================================
+  // OVERRIDES
+  // =========================================================
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is Message && other.id == id;
+  }
+
+  @override
+  int get hashCode => id.hashCode;
 
   @override
   String toString() {
     return '''
 Message(
   id: $id,
-  sender: $senderId,
-  receiver: $receiverId,
+  senderId: $senderId,
+  receiverId: $receiverId,
   content: $content,
   type: ${type.name},
   status: ${status.name},
@@ -475,24 +491,4 @@ Message(
 )
 ''';
   }
-
-  /// =====================================
-  /// 🔹 EQUALITY
-  /// =====================================
-
-  @override
-  bool operator ==(
-      Object other,
-      ) {
-    return identical(
-      this,
-      other,
-    ) ||
-        (other is Message &&
-            other.id == id);
-  }
-
-  @override
-  int get hashCode =>
-      id.hashCode;
 }

@@ -3,12 +3,19 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AuthService {
+  AuthService._();
+
   static final SupabaseClient _supabase =
       Supabase.instance.client;
 
-  /// =========================
-  /// CURRENT USER
-  /// =========================
+  static final GoogleSignIn
+  _googleSignIn = GoogleSignIn(
+    scopes: ['email'],
+  );
+
+  // ==========================================
+  // CURRENT USER
+  // ==========================================
 
   static User? get currentUser =>
       _supabase.auth.currentUser;
@@ -16,9 +23,12 @@ class AuthService {
   static bool get isLoggedIn =>
       currentUser != null;
 
-  /// =========================
-  /// REGISTER
-  /// =========================
+  static String get currentUserId =>
+      currentUser?.id ?? '';
+
+  // ==========================================
+  // REGISTER
+  // ==========================================
 
   static Future<String?> register({
     required String name,
@@ -38,161 +48,132 @@ class AuthService {
       final user = response.user;
 
       if (user == null) {
-        return "Registration failed";
+        return 'Registration failed.';
       }
 
-      await _createProfile(
-        userId: user.id,
-        name: name,
-        email: email,
+      await _ensureProfileExists(
+        user: user,
+        fallbackName: name,
+      );
+
+      await _updateOnlineStatus(
+        true,
       );
 
       return null;
     } on AuthException catch (e) {
       return e.message;
     } catch (e) {
-      return e.toString();
+      debugPrint(
+        'REGISTER ERROR: $e',
+      );
+      return 'Registration failed.';
     }
   }
 
-  /// =========================
-  /// LOGIN
-  /// =========================
+  // ==========================================
+  // LOGIN
+  // ==========================================
 
   static Future<String?> login({
     required String email,
     required String password,
   }) async {
     try {
-      await _supabase.auth.signInWithPassword(
+      await _supabase.auth
+          .signInWithPassword(
         email: email.trim(),
         password: password.trim(),
       );
 
-      await _updateOnlineStatus(true);
+      await _updateOnlineStatus(
+        true,
+      );
 
       return null;
     } on AuthException catch (e) {
       return e.message;
     } catch (e) {
-      return e.toString();
+      debugPrint(
+        'LOGIN ERROR: $e',
+      );
+      return 'Login failed.';
     }
   }
 
-  /// =========================
-  /// GOOGLE LOGIN
-  /// =========================
+  // ==========================================
+  // GOOGLE SIGN-IN
+  // ==========================================
 
-  static Future<String?> signInWithGoogle() async {
+  static Future<String?>
+  signInWithGoogle() async {
     try {
-      final GoogleSignIn googleSignIn =
-      GoogleSignIn(
-        scopes: ['email'],
-      );
+      // Force account picker
+      try {
+        await _googleSignIn
+            .signOut();
+      } catch (_) {}
 
-      /// FORCE ACCOUNT PICKER
-      await googleSignIn.signOut();
-
-      final GoogleSignInAccount? googleUser =
-      await googleSignIn.signIn();
+      final googleUser =
+      await _googleSignIn.signIn();
 
       if (googleUser == null) {
-        return "Google sign in cancelled";
+        return 'Google sign-in cancelled.';
       }
 
-      final GoogleSignInAuthentication
-      googleAuth =
-      await googleUser.authentication;
+      final googleAuth =
+      await googleUser
+          .authentication;
 
       final accessToken =
           googleAuth.accessToken;
-
       final idToken =
           googleAuth.idToken;
 
       if (accessToken == null ||
           idToken == null) {
-        return "Google token error";
+        return 'Failed to retrieve Google tokens.';
       }
 
       final response =
       await _supabase.auth
           .signInWithIdToken(
-        provider: OAuthProvider.google,
+        provider:
+        OAuthProvider.google,
         idToken: idToken,
-        accessToken: accessToken,
+        accessToken:
+        accessToken,
       );
 
       final user = response.user;
 
       if (user == null) {
-        return "Google login failed";
+        return 'Google sign-in failed.';
       }
 
-      /// CHECK PROFILE EXISTS
-      final existing =
-      await _supabase
-          .from('profiles')
-          .select()
-          .eq('id', user.id)
-          .maybeSingle();
+      await _ensureProfileExists(
+        user: user,
+      );
 
-      if (existing == null) {
-        await _createProfile(
-          userId: user.id,
-          name:
-          user.userMetadata?['name'] ??
-              "Nimo User",
-          email: user.email ?? '',
-          avatarUrl: user
-              .userMetadata?['avatar_url'],
-        );
-      }
-
-      await _updateOnlineStatus(true);
+      await _updateOnlineStatus(
+        true,
+      );
 
       return null;
     } catch (e) {
       debugPrint(
-        "GOOGLE LOGIN ERROR: $e",
+        'GOOGLE LOGIN ERROR: $e',
       );
-
-      return e.toString();
+      return 'Google sign-in failed.';
     }
   }
 
-  /// =========================
-  /// LOGOUT
-  /// =========================
+  // ==========================================
+  // RESET PASSWORD
+  // ==========================================
 
-  static Future<void> logout() async {
-    try {
-      await _updateOnlineStatus(false);
-
-      final GoogleSignIn googleSignIn =
-      GoogleSignIn();
-
-      try {
-        await googleSignIn.disconnect();
-      } catch (_) {}
-
-      try {
-        await googleSignIn.signOut();
-      } catch (_) {}
-
-      await _supabase.auth.signOut();
-    } catch (e) {
-      debugPrint(
-        "LOGOUT ERROR: $e",
-      );
-    }
-  }
-
-  /// =========================
-  /// RESET PASSWORD
-  /// =========================
-
-  static Future<String?> resetPassword(
+  static Future<String?>
+  resetPassword(
       String email,
       ) async {
     try {
@@ -205,89 +186,52 @@ class AuthService {
     } on AuthException catch (e) {
       return e.message;
     } catch (e) {
-      return e.toString();
+      debugPrint(
+        'RESET PASSWORD ERROR: $e',
+      );
+      return 'Failed to send reset email.';
     }
   }
 
-  /// =========================
-  /// CREATE PROFILE
-  /// =========================
+  // ==========================================
+  // LOGOUT
+  // ==========================================
 
-  static Future<void> _createProfile({
-    required String userId,
-    required String name,
-    required String email,
-    String? avatarUrl,
-  }) async {
+  static Future<void> logout() async {
     try {
-      await _supabase
-          .from('profiles')
-          .insert({
-        'id': userId,
-        'name': name.trim(),
-        'email': email.trim(),
-        'avatar_url': avatarUrl ?? '',
-        'description': '',
-        'is_online': true,
-        'last_seen': DateTime.now()
-            .toIso8601String(),
-        'typing_to': '',
-      });
+      await _updateOnlineStatus(
+        false,
+      );
+
+      try {
+        await _googleSignIn
+            .disconnect();
+      } catch (_) {}
+
+      try {
+        await _googleSignIn
+            .signOut();
+      } catch (_) {}
+
+      await _supabase.auth.signOut();
     } catch (e) {
       debugPrint(
-        "CREATE PROFILE ERROR: $e",
+        'LOGOUT ERROR: $e',
       );
     }
   }
 
-  /// =========================
-  /// ONLINE STATUS
-  /// =========================
+  // ==========================================
+  // DELETE ACCOUNT
+  // ==========================================
 
-  static Future<void>
-  _updateOnlineStatus(
-      bool online,
-      ) async {
+  static Future<String?>
+  deleteAccount() async {
     try {
       final user = currentUser;
 
       if (user == null) {
-        return;
-      }
-
-      await _supabase
-          .from('profiles')
-          .update({
-        'is_online': online,
-        'last_seen': DateTime.now()
-            .toIso8601String(),
-      }).eq('id', user.id);
-    } catch (e) {
-      debugPrint(
-        "ONLINE STATUS ERROR: $e",
-      );
-    }
-  }
-
-  /// =========================
-  /// AUTH STREAM
-  /// =========================
-
-  static Stream<AuthState>
-  get authStateChanges =>
-      _supabase.auth.onAuthStateChange;
-
-  /// =========================
-  /// DELETE ACCOUNT
-  /// =========================
-
-  static Future<String?> deleteAccount()
-  async {
-    try {
-      final user = currentUser;
-
-      if (user == null) {
-        return "User not found";
+        return 'User not found.';
       }
 
       await _supabase
@@ -299,7 +243,118 @@ class AuthService {
 
       return null;
     } catch (e) {
-      return e.toString();
+      debugPrint(
+        'DELETE ACCOUNT ERROR: $e',
+      );
+      return 'Failed to delete account.';
+    }
+  }
+
+  // ==========================================
+  // AUTH STREAM
+  // ==========================================
+
+  static Stream<AuthState>
+  get authStateChanges =>
+      _supabase
+          .auth
+          .onAuthStateChange;
+
+  // ==========================================
+  // ENSURE PROFILE EXISTS
+  // ==========================================
+
+  static Future<void>
+  _ensureProfileExists({
+    required User user,
+    String? fallbackName,
+  }) async {
+    try {
+      final existing =
+      await _supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      if (existing != null) {
+        return;
+      }
+
+      final metadata =
+          user.userMetadata ?? {};
+
+      final name =
+      metadata['name']
+          ?.toString()
+          .trim()
+          .isNotEmpty ==
+          true
+          ? metadata['name']
+          .toString()
+          : (fallbackName ??
+          user.email
+              ?.split('@')
+              .first ??
+          'NIMO User');
+
+      final avatarUrl =
+          metadata['avatar_url']
+              ?.toString() ??
+              '';
+
+      await _supabase
+          .from('profiles')
+          .insert({
+        'id': user.id,
+        'name': name,
+        'email': user.email ?? '',
+        'avatar_url':
+        avatarUrl,
+        'description': '',
+        'is_online': true,
+        'last_seen':
+        DateTime.now()
+            .toUtc()
+            .toIso8601String(),
+        'typing_to': '',
+      });
+    } catch (e) {
+      debugPrint(
+        'CREATE PROFILE ERROR: $e',
+      );
+    }
+  }
+
+  // ==========================================
+  // UPDATE ONLINE STATUS
+  // ==========================================
+
+  static Future<void>
+  _updateOnlineStatus(
+      bool online,
+      ) async {
+    final user = currentUser;
+
+    if (user == null) {
+      return;
+    }
+
+    try {
+      await _supabase
+          .from('profiles')
+          .update({
+        'is_online': online,
+        'last_seen':
+        DateTime.now()
+            .toUtc()
+            .toIso8601String(),
+      })
+          .eq('id', user.id);
+    } catch (e) {
+      debugPrint(
+        'ONLINE STATUS ERROR: $e',
+      );
     }
   }
 }
