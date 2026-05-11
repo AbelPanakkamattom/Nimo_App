@@ -39,7 +39,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   // SEND TEXT MESSAGE
   // =========================================================
-
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
 
@@ -63,7 +62,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   // SEND IMAGE
   // =========================================================
-
   Future<void> _sendImage() async {
     try {
       final picker = ImagePicker();
@@ -105,7 +103,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   // SEND VIDEO
   // =========================================================
-
   Future<void> _sendVideo() async {
     try {
       final picker = ImagePicker();
@@ -146,21 +143,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   // SEND DOCUMENT
   // =========================================================
-
   Future<void> _sendDocument() async {
     try {
       final result = await FilePicker.platform.pickFiles();
 
-      if (result == null || result.files.isEmpty) {
-        return;
-      }
+      if (result == null || result.files.isEmpty) return;
 
       final pickedFile = result.files.single;
 
       final filePath = pickedFile.path;
-      if (filePath == null || filePath.trim().isEmpty) {
-        return;
-      }
+      if (filePath == null || filePath.trim().isEmpty) return;
 
       final fileName = pickedFile.name;
 
@@ -195,26 +187,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   // VOICE PLACEHOLDER
   // =========================================================
-
   void _showVoicePlaceholder() {
     _showError('Voice recording support coming soon.');
   }
 
   // =========================================================
   // FORMAT DATE & TIME
-  // Example: 10 May, 12:45 PM
   // =========================================================
-
   String _formatDateTime(DateTime dateTime) {
-    return DateFormat('d MMM, h:mm a').format(
-      dateTime.toLocal(),
-    );
+    return DateFormat('d MMM, h:mm a').format(dateTime.toLocal());
   }
 
   // =========================================================
   // MESSAGE STATUS
   // =========================================================
-
   String _statusFor(Message message) {
     return message.status.name;
   }
@@ -222,19 +208,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   // BUILD MESSAGE BUBBLE
   // =========================================================
-
   Widget _buildMessageBubble(Message message) {
-    final isMe =
-        message.senderId == SupabaseChatService.myId;
+    final isMe = message.senderId == SupabaseChatService.myId;
 
     final mediaUrl = message.mediaUrl ?? '';
 
-    final displayMessage =
-    message.type == MessageType.text
+    final displayMessage = message.type == MessageType.text
         ? message.content
-        : (mediaUrl.isNotEmpty
-        ? mediaUrl
-        : message.content);
+        : (mediaUrl.isNotEmpty ? mediaUrl : message.content);
 
     return MessageBubble(
       message: displayMessage,
@@ -242,8 +223,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       isMe: isMe,
       isImage: message.type == MessageType.image,
       isAudio: message.type == MessageType.audio,
-      isDocument:
-      message.type == MessageType.document,
+      isDocument: message.type == MessageType.document,
       isVideo: message.type == MessageType.video,
       status: _statusFor(message),
       fileName: message.fileName,
@@ -253,7 +233,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   // AUTO SCROLL
   // =========================================================
-
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -270,7 +249,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   // SHOW ERROR
   // =========================================================
-
   void _showError(String text) {
     if (!mounted) return;
 
@@ -285,20 +263,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   // INIT
   // =========================================================
-
   @override
   void initState() {
     super.initState();
 
-    SupabaseChatService.markAsSeen(
-      widget.otherUserId,
-    );
+    SupabaseChatService.markAsSeen(widget.otherUserId);
   }
 
   // =========================================================
   // DISPOSE
   // =========================================================
-
   @override
   void dispose() {
     _controller.dispose();
@@ -309,7 +283,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   // BUILD
   // =========================================================
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -331,8 +304,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             const SizedBox(width: 10),
             Expanded(
               child: Column(
-                crossAxisAlignment:
-                CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
@@ -377,8 +349,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               builder: (context, snapshot) {
                 if (!snapshot.hasData) {
                   return const Center(
-                    child:
-                    CircularProgressIndicator(),
+                    child: CircularProgressIndicator(),
                   );
                 }
 
@@ -390,8 +361,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   );
                 }
 
-                WidgetsBinding.instance
-                    .addPostFrameCallback(
+                WidgetsBinding.instance.addPostFrameCallback(
                       (_) => _scrollToBottom(),
                 );
 
@@ -399,13 +369,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   controller: _scrollController,
                   padding: const EdgeInsets.all(14),
                   keyboardDismissBehavior:
-                  ScrollViewKeyboardDismissBehavior
-                      .onDrag,
+                  ScrollViewKeyboardDismissBehavior.onDrag,
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
-                    return _buildMessageBubble(
-                      messages[index],
-                    );
+                    return _buildMessageBubble(messages[index]);
                   },
                 );
               },
@@ -421,7 +388,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             onVideo: _sendVideo,
             onVoice: _showVoicePlaceholder,
             onTyping: (text) {
-              // Future: typing indicator support
+              // Typing indicator can be added here later.
             },
           ),
         ],

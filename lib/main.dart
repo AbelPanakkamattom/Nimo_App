@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 
 // Screens
 import 'screens/auth_screen.dart';
@@ -11,20 +12,17 @@ import 'screens/splash_screen.dart';
 // Services
 import 'services/notification_service.dart';
 import 'services/online_service.dart';
+import 'services/zego_call_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // =========================================================
-  // LOCK PORTRAIT MODE
-  // =========================================================
+  // Lock portrait mode
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
 
-  // =========================================================
-  // STATUS BAR STYLE
-  // =========================================================
+  // Status bar style
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -33,18 +31,14 @@ Future<void> main() async {
     ),
   );
 
-  // =========================================================
-  // LOAD ENVIRONMENT VARIABLES
-  // =========================================================
+  // Load .env
   try {
     await dotenv.load(fileName: '.env');
   } catch (e) {
     debugPrint('ENV LOAD ERROR: $e');
   }
 
-  // =========================================================
-  // INITIALIZE SUPABASE
-  // =========================================================
+  // Initialize Supabase
   try {
     final url = dotenv.env['SUPABASE_URL'];
     final anonKey = dotenv.env['SUPABASE_ANON_KEY'];
@@ -59,17 +53,13 @@ Future<void> main() async {
         debug: false,
       );
     } else {
-      debugPrint(
-        'SUPABASE_URL or SUPABASE_ANON_KEY missing in .env',
-      );
+      debugPrint('SUPABASE_URL or SUPABASE_ANON_KEY missing in .env');
     }
   } catch (e) {
     debugPrint('SUPABASE INIT ERROR: $e');
   }
 
-  // =========================================================
-  // INITIALIZE LOCAL NOTIFICATIONS
-  // =========================================================
+  // Initialize notifications
   try {
     await NotificationService.initialize();
   } catch (e) {
@@ -93,6 +83,20 @@ class NimoApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(),
       home: const AppBootstrapper(),
+      builder: (context, child) {
+        // IMPORTANT:
+        // In your installed ZEGOCLOUD version,
+        // ZegoUIKitPrebuiltCallMiniOverlayPage only accepts:
+        //   contextQuery:
+        // and does NOT accept child as named or positional parameter.
+        //
+        // So we simply initialize the overlay and return the child manually.
+        ZegoUIKitPrebuiltCallMiniOverlayPage(
+          contextQuery: () => context,
+        );
+
+        return child ?? const SizedBox();
+      },
     );
   }
 }
@@ -105,20 +109,14 @@ class AppBootstrapper extends StatefulWidget {
   const AppBootstrapper({super.key});
 
   @override
-  State<AppBootstrapper> createState() =>
-      _AppBootstrapperState();
+  State<AppBootstrapper> createState() => _AppBootstrapperState();
 }
 
-class _AppBootstrapperState
-    extends State<AppBootstrapper>
+class _AppBootstrapperState extends State<AppBootstrapper>
     with WidgetsBindingObserver {
   bool _initialized = false;
   bool _hasError = false;
   String _errorMessage = '';
-
-  // =========================================================
-  // INIT
-  // =========================================================
 
   @override
   void initState() {
@@ -127,16 +125,11 @@ class _AppBootstrapperState
     _initialize();
   }
 
-  // =========================================================
-  // INITIALIZE APP SERVICES
-  // =========================================================
-
   Future<void> _initialize() async {
     try {
-      // Set current user online if logged in
       await OnlineService.setOnline();
+      await _initializeZego();
 
-      // Splash delay
       await Future.delayed(
         const Duration(milliseconds: 1800),
       );
@@ -156,14 +149,30 @@ class _AppBootstrapperState
     }
   }
 
-  // =========================================================
-  // APP LIFECYCLE
-  // =========================================================
+  Future<void> _initializeZego() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+
+      if (user == null) return;
+
+      final userName =
+      user.userMetadata?['name']?.toString().trim().isNotEmpty == true
+          ? user.userMetadata!['name'].toString().trim()
+          : user.email?.split('@').first ?? 'NIMO User';
+
+      debugPrint('ZEGO INIT -> $userName (${user.id})');
+
+      ZegoCallService.init(
+        userID: user.id,
+        userName: userName,
+      );
+    } catch (e) {
+      debugPrint('ZEGO INIT ERROR: $e');
+    }
+  }
 
   @override
-  void didChangeAppLifecycleState(
-      AppLifecycleState state,
-      ) {
+  void didChangeAppLifecycleState(AppLifecycleState state) {
     switch (state) {
       case AppLifecycleState.resumed:
         OnlineService.setOnline();
@@ -178,10 +187,6 @@ class _AppBootstrapperState
     }
   }
 
-  // =========================================================
-  // DISPOSE
-  // =========================================================
-
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -189,16 +194,10 @@ class _AppBootstrapperState
     super.dispose();
   }
 
-  // =========================================================
-  // BUILD
-  // =========================================================
-
   @override
   Widget build(BuildContext context) {
     if (_hasError) {
-      return ErrorScreen(
-        message: _errorMessage,
-      );
+      return ErrorScreen(message: _errorMessage);
     }
 
     if (!_initialized) {
@@ -219,8 +218,7 @@ class AuthGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     try {
-      final session = Supabase
-          .instance.client.auth.currentSession;
+      final session = Supabase.instance.client.auth.currentSession;
 
       if (session != null) {
         return const HomeScreen();
@@ -246,69 +244,53 @@ class ErrorScreen extends StatelessWidget {
     required this.message,
   });
 
-  static const Color primary =
-  Color(0xFF6C5CE7);
+  static const Color primary = Color(0xFF6C5CE7);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor:
-      const Color(0xFFF5F6FF),
+      backgroundColor: const Color(0xFFF5F6FF),
       body: SafeArea(
         child: Center(
           child: Padding(
-            padding:
-            const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(24),
             child: Container(
-              padding:
-              const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius:
-                BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(28),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black
-                        .withAlpha(12),
+                    color: Colors.black.withAlpha(12),
                     blurRadius: 20,
-                    offset:
-                    const Offset(0, 8),
+                    offset: const Offset(0, 8),
                   ),
                 ],
               ),
               child: Column(
-                mainAxisSize:
-                MainAxisSize.min,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(
                     Icons.error_outline,
                     size: 64,
                     color: Colors.red,
                   ),
-                  const SizedBox(
-                    height: 16,
-                  ),
+                  const SizedBox(height: 16),
                   const Text(
                     'NIMO Failed to Start',
-                    textAlign:
-                    TextAlign.center,
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 24,
-                      fontWeight:
-                      FontWeight.bold,
+                      fontWeight: FontWeight.bold,
                       color: primary,
                     ),
                   ),
-                  const SizedBox(
-                    height: 12,
-                  ),
+                  const SizedBox(height: 12),
                   Text(
                     message,
-                    textAlign:
-                    TextAlign.center,
-                    style: TextStyle(
-                      color: Colors
-                          .grey.shade700,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.grey,
                       height: 1.5,
                     ),
                   ),
@@ -327,15 +309,11 @@ class ErrorScreen extends StatelessWidget {
 // =========================================================
 
 ThemeData _buildTheme() {
-  const Color primary =
-  Color(0xFF6C5CE7);
-  const Color secondary =
-  Color(0xFF8E7BFF);
-  const Color background =
-  Color(0xFFF5F6FF);
+  const Color primary = Color(0xFF6C5CE7);
+  const Color secondary = Color(0xFF8E7BFF);
+  const Color background = Color(0xFFF5F6FF);
 
-  final colorScheme =
-  ColorScheme.fromSeed(
+  final colorScheme = ColorScheme.fromSeed(
     seedColor: primary,
     primary: primary,
     secondary: secondary,
@@ -347,108 +325,5 @@ ThemeData _buildTheme() {
     fontFamily: 'Roboto',
     scaffoldBackgroundColor: background,
     colorScheme: colorScheme,
-
-    appBarTheme: const AppBarTheme(
-      backgroundColor:
-      Colors.transparent,
-      elevation: 0,
-      centerTitle: false,
-      surfaceTintColor:
-      Colors.transparent,
-      iconTheme: IconThemeData(
-        color: Colors.black87,
-      ),
-      titleTextStyle: TextStyle(
-        color: Colors.black87,
-        fontSize: 28,
-        fontWeight: FontWeight.bold,
-      ),
-    ),
-
-    inputDecorationTheme:
-    InputDecorationTheme(
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding:
-      const EdgeInsets.symmetric(
-        horizontal: 18,
-        vertical: 16,
-      ),
-      hintStyle: TextStyle(
-        color: Colors.grey.shade500,
-      ),
-      border: OutlineInputBorder(
-        borderRadius:
-        BorderRadius.circular(18),
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder:
-      OutlineInputBorder(
-        borderRadius:
-        BorderRadius.circular(18),
-        borderSide: BorderSide.none,
-      ),
-      focusedBorder:
-      OutlineInputBorder(
-        borderRadius:
-        BorderRadius.circular(18),
-        borderSide:
-        const BorderSide(
-          color: primary,
-          width: 1.4,
-        ),
-      ),
-    ),
-
-    elevatedButtonTheme:
-    ElevatedButtonThemeData(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: primary,
-        foregroundColor:
-        Colors.white,
-        minimumSize:
-        const Size.fromHeight(56),
-        elevation: 0,
-        shape:
-        RoundedRectangleBorder(
-          borderRadius:
-          BorderRadius.circular(18),
-        ),
-        textStyle: const TextStyle(
-          fontSize: 16,
-          fontWeight:
-          FontWeight.w600,
-        ),
-      ),
-    ),
-
-    floatingActionButtonTheme:
-    const FloatingActionButtonThemeData(
-      backgroundColor: primary,
-      foregroundColor: Colors.white,
-      elevation: 6,
-      shape: CircleBorder(),
-    ),
-
-    snackBarTheme:
-    SnackBarThemeData(
-      backgroundColor: primary,
-      contentTextStyle:
-      const TextStyle(
-        color: Colors.white,
-      ),
-      behavior:
-      SnackBarBehavior.floating,
-      shape:
-      RoundedRectangleBorder(
-        borderRadius:
-        BorderRadius.circular(14),
-      ),
-    ),
-
-    dividerTheme: DividerThemeData(
-      color: Colors.grey.shade200,
-      thickness: 1,
-    ),
   );
 }

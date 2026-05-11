@@ -1,20 +1,49 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.nimo_app">
 
-    <!-- Internet permission -->
+    <!-- ===================================================== -->
+    <!-- INTERNET -->
+    <!-- ===================================================== -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Microphone permission -->
+    <!-- ===================================================== -->
+    <!-- AUDIO / VIDEO CALLING -->
+    <!-- ===================================================== -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
-    <!-- Storage permissions -->
+    <!-- Bluetooth -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- ===================================================== -->
+    <!-- NOTIFICATIONS -->
+    <!-- ===================================================== -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- ===================================================== -->
+    <!-- CONTACTS -->
+    <!-- ===================================================== -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!-- ===================================================== -->
+    <!-- STORAGE / MEDIA -->
+    <!-- ===================================================== -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
+    <!-- ===================================================== -->
+    <!-- WAKE LOCK -->
+    <!-- ===================================================== -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
-        android:label="NIMO"
         android:name="${applicationName}"
+        android:label="NIMO"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
 
@@ -51,11 +80,10 @@
             </intent-filter>
         </activity>
 
-        <!-- Required by Flutter -->
+        <!-- Flutter embedding -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-
     </application>
 
 </manifest>

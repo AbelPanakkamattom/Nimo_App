@@ -48,12 +48,14 @@ class SupabaseChatService {
     }
 
     final hasText = text.isNotEmpty;
-    final hasMedia = mediaUrl != null && mediaUrl.trim().isNotEmpty;
+    final hasMedia =
+        mediaUrl != null && mediaUrl.trim().isNotEmpty;
 
     if (!hasText && !hasMedia) {
       throw Exception('Message is empty.');
     }
 
+    // Check if receiver is blocked by current user
     final blocked = await isBlocked(receiver);
     if (blocked) {
       throw Exception('You have blocked this user.');
@@ -67,7 +69,8 @@ class SupabaseChatService {
       'status': MessageStatus.sent.name,
       'deleted': false,
       'is_seen': false,
-      'created_at': DateTime.now().toUtc().toIso8601String(),
+      'created_at':
+      DateTime.now().toUtc().toIso8601String(),
     };
 
     if (replyToMessageId != null &&
@@ -80,7 +83,8 @@ class SupabaseChatService {
       payload['file_url'] = mediaUrl.trim();
     }
 
-    if (fileName != null && fileName.trim().isNotEmpty) {
+    if (fileName != null &&
+        fileName.trim().isNotEmpty) {
       payload['file_name'] = fileName.trim();
     }
 
@@ -88,7 +92,8 @@ class SupabaseChatService {
       payload['file_size'] = fileSize;
     }
 
-    if (mimeType != null && mimeType.trim().isNotEmpty) {
+    if (mimeType != null &&
+        mimeType.trim().isNotEmpty) {
       payload['mime_type'] = mimeType.trim();
     }
 
@@ -104,11 +109,14 @@ class SupabaseChatService {
   }
 
   // =========================================================
-  // REAL-TIME CHAT STREAM
+  // CHAT STREAM
   // =========================================================
 
-  static Stream<List<Message>> getChat(String otherUserId) {
-    if (!isLoggedIn || otherUserId.trim().isEmpty) {
+  static Stream<List<Message>> getChat(
+      String otherUserId,
+      ) {
+    if (!isLoggedIn ||
+        otherUserId.trim().isEmpty) {
       return Stream.value(<Message>[]);
     }
 
@@ -120,8 +128,10 @@ class SupabaseChatService {
       try {
         final messages = rows
             .where((row) {
-          final sender = row['sender_id']?.toString() ?? '';
-          final receiver = row['receiver_id']?.toString() ?? '';
+          final sender =
+              row['sender_id']?.toString() ?? '';
+          final receiver =
+              row['receiver_id']?.toString() ?? '';
 
           return (sender == myId &&
               receiver == otherUserId) ||
@@ -136,11 +146,18 @@ class SupabaseChatService {
             .toList();
 
         messages.sort(
-              (a, b) => a.createdAt.compareTo(b.createdAt),
+              (a, b) =>
+              a.createdAt.compareTo(b.createdAt),
         );
 
-        _autoMarkDelivered(messages, otherUserId);
-        _autoMarkSeen(messages, otherUserId);
+        _autoMarkDelivered(
+          messages,
+          otherUserId,
+        );
+        _autoMarkSeen(
+          messages,
+          otherUserId,
+        );
 
         return messages;
       } catch (e) {
@@ -151,7 +168,7 @@ class SupabaseChatService {
   }
 
   // =========================================================
-  // MARK DELIVERED
+  // MARK AS DELIVERED
   // =========================================================
 
   static Future<void> markAsDelivered(
@@ -163,18 +180,24 @@ class SupabaseChatService {
       await _client
           .from('messages')
           .update({
-        'status': MessageStatus.delivered.name,
+        'status':
+        MessageStatus.delivered.name,
       })
           .eq('sender_id', otherUserId)
           .eq('receiver_id', myId)
-          .eq('status', MessageStatus.sent.name);
+          .eq(
+        'status',
+        MessageStatus.sent.name,
+      );
     } catch (e) {
-      debugPrint('MARK DELIVERED ERROR: $e');
+      debugPrint(
+        'MARK DELIVERED ERROR: $e',
+      );
     }
   }
 
   // =========================================================
-  // MARK SEEN
+  // MARK AS SEEN
   // =========================================================
 
   static Future<void> markAsSeen(
@@ -191,7 +214,10 @@ class SupabaseChatService {
       })
           .eq('sender_id', otherUserId)
           .eq('receiver_id', myId)
-          .neq('status', MessageStatus.seen.name);
+          .neq(
+        'status',
+        MessageStatus.seen.name,
+      );
     } catch (e) {
       debugPrint('MARK SEEN ERROR: $e');
     }
@@ -203,9 +229,11 @@ class SupabaseChatService {
       ) {
     final hasPending = messages.any(
           (message) =>
-      message.senderId == otherUserId &&
+      message.senderId ==
+          otherUserId &&
           message.receiverId == myId &&
-          message.status == MessageStatus.sent,
+          message.status ==
+              MessageStatus.sent,
     );
 
     if (hasPending) {
@@ -219,9 +247,11 @@ class SupabaseChatService {
       ) {
     final hasUnseen = messages.any(
           (message) =>
-      message.senderId == otherUserId &&
+      message.senderId ==
+          otherUserId &&
           message.receiverId == myId &&
-          message.status != MessageStatus.seen,
+          message.status !=
+              MessageStatus.seen,
     );
 
     if (hasUnseen) {
@@ -242,7 +272,9 @@ class SupabaseChatService {
           .delete()
           .eq('id', messageId);
     } catch (_) {
-      throw Exception('Failed to delete message.');
+      throw Exception(
+        'Failed to delete message.',
+      );
     }
   }
 
@@ -253,12 +285,15 @@ class SupabaseChatService {
       await _client
           .from('messages')
           .update({
-        'content': '🚫 This message was deleted',
+        'content':
+        '🚫 This message was deleted',
         'deleted': true,
       })
           .eq('id', messageId);
     } catch (e) {
-      debugPrint('DELETE FOR EVERYONE ERROR: $e');
+      debugPrint(
+        'DELETE FOR EVERYONE ERROR: $e',
+      );
     }
   }
 
@@ -270,7 +305,8 @@ class SupabaseChatService {
     required String receiverId,
     required bool isTyping,
   }) async {
-    if (!isLoggedIn || receiverId.trim().isEmpty) {
+    if (!isLoggedIn ||
+        receiverId.trim().isEmpty) {
       return;
     }
 
@@ -281,11 +317,14 @@ class SupabaseChatService {
         'user_id': myId,
         'receiver_id': receiverId,
         'is_typing': isTyping,
-        'updated_at':
-        DateTime.now().toUtc().toIso8601String(),
+        'updated_at': DateTime.now()
+            .toUtc()
+            .toIso8601String(),
       });
     } catch (e) {
-      debugPrint('SET TYPING ERROR: $e');
+      debugPrint(
+        'SET TYPING ERROR: $e',
+      );
     }
   }
 
@@ -299,22 +338,26 @@ class SupabaseChatService {
     return _client
         .from('typing_status')
         .stream(
-      primaryKey: ['user_id', 'receiver_id'],
+      primaryKey: [
+        'user_id',
+        'receiver_id',
+      ],
     )
         .map((rows) {
       try {
         final row = rows.firstWhere(
               (item) =>
-          item['user_id'] == otherUserId &&
-              item['receiver_id'] == myId,
+          item['user_id'] ==
+              otherUserId &&
+              item['receiver_id'] ==
+                  myId,
         );
 
         return row['is_typing'] == true;
       } catch (_) {
         return false;
       }
-    })
-        .distinct();
+    }).distinct();
   }
 
   // =========================================================
@@ -331,12 +374,15 @@ class SupabaseChatService {
           .from('profiles')
           .update({
         'is_online': online,
-        'last_seen':
-        DateTime.now().toUtc().toIso8601String(),
+        'last_seen': DateTime.now()
+            .toUtc()
+            .toIso8601String(),
       })
           .eq('id', myId);
     } catch (e) {
-      debugPrint('ONLINE STATUS ERROR: $e');
+      debugPrint(
+        'ONLINE STATUS ERROR: $e',
+      );
     }
   }
 
@@ -357,7 +403,8 @@ class SupabaseChatService {
       final profile = rows.first;
 
       return {
-        'online': profile['is_online'] == true,
+        'online':
+        profile['is_online'] == true,
         'last_seen': profile['last_seen'],
       };
     });
@@ -379,21 +426,24 @@ class SupabaseChatService {
         .stream(primaryKey: ['id'])
         .map((rows) {
       return rows.where((row) {
-        return row['sender_id'] == otherUserId &&
+        return row['sender_id'] ==
+            otherUserId &&
             row['receiver_id'] == myId &&
-            row['status'] != MessageStatus.seen.name;
+            row['status'] !=
+                MessageStatus.seen.name;
       }).length;
     });
   }
 
   // =========================================================
-  // BLOCK USERS
+  // BLOCK USER
   // =========================================================
 
   static Future<void> blockUser({
     required String blockedId,
   }) async {
-    if (!isLoggedIn || blockedId.trim().isEmpty) {
+    if (!isLoggedIn ||
+        blockedId.trim().isEmpty) {
       return;
     }
 
@@ -405,14 +455,21 @@ class SupabaseChatService {
         'blocked_id': blockedId,
       });
     } catch (e) {
-      debugPrint('BLOCK USER ERROR: $e');
+      debugPrint(
+        'BLOCK USER ERROR: $e',
+      );
     }
   }
+
+  // =========================================================
+  // UNBLOCK USER
+  // =========================================================
 
   static Future<void> unblockUser(
       String blockedId,
       ) async {
-    if (!isLoggedIn || blockedId.trim().isEmpty) {
+    if (!isLoggedIn ||
+        blockedId.trim().isEmpty) {
       return;
     }
 
@@ -425,14 +482,21 @@ class SupabaseChatService {
         'blocked_id': blockedId,
       });
     } catch (e) {
-      debugPrint('UNBLOCK USER ERROR: $e');
+      debugPrint(
+        'UNBLOCK USER ERROR: $e',
+      );
     }
   }
+
+  // =========================================================
+  // CHECK IF BLOCKED
+  // =========================================================
 
   static Future<bool> isBlocked(
       String otherUserId,
       ) async {
-    if (!isLoggedIn || otherUserId.trim().isEmpty) {
+    if (!isLoggedIn ||
+        otherUserId.trim().isEmpty) {
       return false;
     }
 
@@ -441,7 +505,10 @@ class SupabaseChatService {
           .from('blocked_users')
           .select()
           .eq('blocker_id', myId)
-          .eq('blocked_id', otherUserId)
+          .eq(
+        'blocked_id',
+        otherUserId,
+      )
           .maybeSingle();
 
       return result != null;

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'zego_call_service.dart';
 
 class AuthService {
   AuthService._();
@@ -8,14 +9,9 @@ class AuthService {
   static final SupabaseClient _supabase =
       Supabase.instance.client;
 
-  static final GoogleSignIn
-  _googleSignIn = GoogleSignIn(
-    scopes: ['email'],
-  );
-
-  // ==========================================
+  // ==========================================================
   // CURRENT USER
-  // ==========================================
+  // ==========================================================
 
   static User? get currentUser =>
       _supabase.auth.currentUser;
@@ -26,9 +22,9 @@ class AuthService {
   static String get currentUserId =>
       currentUser?.id ?? '';
 
-  // ==========================================
+  // ==========================================================
   // REGISTER
-  // ==========================================
+  // ==========================================================
 
   static Future<String?> register({
     required String name,
@@ -56,124 +52,90 @@ class AuthService {
         fallbackName: name,
       );
 
-      await _updateOnlineStatus(
-        true,
-      );
+      await _updateOnlineStatus(true);
+
+      // Initialize ZEGOCLOUD
+      await _initializeZego(user);
 
       return null;
     } on AuthException catch (e) {
       return e.message;
     } catch (e) {
-      debugPrint(
-        'REGISTER ERROR: $e',
-      );
+      debugPrint('REGISTER ERROR: $e');
       return 'Registration failed.';
     }
   }
 
-  // ==========================================
+  // ==========================================================
   // LOGIN
-  // ==========================================
+  // ==========================================================
 
   static Future<String?> login({
     required String email,
     required String password,
   }) async {
     try {
-      await _supabase.auth
+      final response = await _supabase
+          .auth
           .signInWithPassword(
         email: email.trim(),
         password: password.trim(),
       );
 
-      await _updateOnlineStatus(
-        true,
-      );
+      final user = response.user;
+
+      if (user != null) {
+        await _ensureProfileExists(
+          user: user,
+        );
+
+        await _updateOnlineStatus(true);
+
+        // Initialize ZEGOCLOUD
+        await _initializeZego(user);
+      }
 
       return null;
     } on AuthException catch (e) {
       return e.message;
     } catch (e) {
-      debugPrint(
-        'LOGIN ERROR: $e',
-      );
+      debugPrint('LOGIN ERROR: $e');
       return 'Login failed.';
     }
   }
 
-  // ==========================================
-  // GOOGLE SIGN-IN
-  // ==========================================
+  // ==========================================================
+  // GOOGLE SIGN-IN (SUPABASE OAUTH)
+  // ==========================================================
 
-  static Future<String?>
-  signInWithGoogle() async {
+  static Future<String?> signInWithGoogle() async {
     try {
-      // Force account picker
-      try {
-        await _googleSignIn
-            .signOut();
-      } catch (_) {}
-
-      final googleUser =
-      await _googleSignIn.signIn();
-
-      if (googleUser == null) {
-        return 'Google sign-in cancelled.';
-      }
-
-      final googleAuth =
-      await googleUser
-          .authentication;
-
-      final accessToken =
-          googleAuth.accessToken;
-      final idToken =
-          googleAuth.idToken;
-
-      if (accessToken == null ||
-          idToken == null) {
-        return 'Failed to retrieve Google tokens.';
-      }
-
-      final response =
-      await _supabase.auth
-          .signInWithIdToken(
-        provider:
+      await _supabase.auth.signInWithOAuth(
         OAuthProvider.google,
-        idToken: idToken,
-        accessToken:
-        accessToken,
+        redirectTo:
+        'io.supabase.flutter://login-callback/',
       );
 
-      final user = response.user;
-
-      if (user == null) {
-        return 'Google sign-in failed.';
-      }
-
-      await _ensureProfileExists(
-        user: user,
-      );
-
-      await _updateOnlineStatus(
-        true,
-      );
+      // NOTE:
+      // After OAuth redirect completes, main.dart
+      // and AuthGate will re-open the app.
+      // ZEGOCLOUD will be initialized there
+      // for the authenticated user.
 
       return null;
+    } on AuthException catch (e) {
+      return e.message;
     } catch (e) {
-      debugPrint(
-        'GOOGLE LOGIN ERROR: $e',
-      );
+      debugPrint('GOOGLE LOGIN ERROR: $e');
       return 'Google sign-in failed.';
     }
   }
 
-  // ==========================================
+  // ==========================================================
   // RESET PASSWORD
-  // ==========================================
+  // ==========================================================
 
-  static Future<String?>
-  resetPassword(
+  static Future<String?> resetPassword(
       String email,
       ) async {
     try {
@@ -181,7 +143,6 @@ class AuthService {
           .resetPasswordForEmail(
         email.trim(),
       );
-
       return null;
     } on AuthException catch (e) {
       return e.message;
@@ -193,40 +154,29 @@ class AuthService {
     }
   }
 
-  // ==========================================
+  // ==========================================================
   // LOGOUT
-  // ==========================================
+  // ==========================================================
 
   static Future<void> logout() async {
     try {
-      await _updateOnlineStatus(
-        false,
-      );
+      await _updateOnlineStatus(false);
 
-      try {
-        await _googleSignIn
-            .disconnect();
-      } catch (_) {}
+      // Stop ZEGOCLOUD
+      ZegoCallService.uninit();
 
-      try {
-        await _googleSignIn
-            .signOut();
-      } catch (_) {}
-
+      // Sign out from Supabase
       await _supabase.auth.signOut();
     } catch (e) {
-      debugPrint(
-        'LOGOUT ERROR: $e',
-      );
+      debugPrint('LOGOUT ERROR: $e');
     }
   }
 
-  // ==========================================
+  // ==========================================================
   // DELETE ACCOUNT
-  // ==========================================
+  // ==========================================================
 
-  static Future<String?>
-  deleteAccount() async {
+  static Future<String?> deleteAccount() async {
     try {
       final user = currentUser;
 
@@ -250,22 +200,64 @@ class AuthService {
     }
   }
 
-  // ==========================================
-  // AUTH STREAM
-  // ==========================================
+  // ==========================================================
+  // AUTH STATE CHANGES
+  // ==========================================================
 
   static Stream<AuthState>
   get authStateChanges =>
-      _supabase
-          .auth
-          .onAuthStateChange;
+      _supabase.auth.onAuthStateChange;
 
-  // ==========================================
+  // ==========================================================
+  // INITIALIZE ZEGOCLOUD
+  // ==========================================================
+
+  static Future<void> _initializeZego(
+      User user,
+      ) async {
+    try {
+      final metadata =
+          user.userMetadata ?? {};
+
+      final String userName =
+      metadata['name']
+          ?.toString()
+          .trim()
+          .isNotEmpty ==
+          true
+          ? metadata['name']
+          .toString()
+          .trim()
+          : user.email
+          ?.split('@')
+          .first ??
+          'NIMO User';
+
+      // Ensure previous session is closed
+      ZegoCallService.uninit();
+
+      // Initialize for current user
+      ZegoCallService.init(
+        userID: user.id,
+        userName: userName,
+      );
+
+      debugPrint(
+        'ZEGO INITIALIZED: '
+            '$userName (${user.id})',
+      );
+    } catch (e) {
+      debugPrint(
+        'ZEGO INIT ERROR: $e',
+      );
+    }
+  }
+
+  // ==========================================================
   // ENSURE PROFILE EXISTS
-  // ==========================================
+  // ==========================================================
 
-  static Future<void>
-  _ensureProfileExists({
+  static Future<void> _ensureProfileExists({
     required User user,
     String? fallbackName,
   }) async {
@@ -284,7 +276,7 @@ class AuthService {
       final metadata =
           user.userMetadata ?? {};
 
-      final name =
+      final String name =
       metadata['name']
           ?.toString()
           .trim()
@@ -292,16 +284,21 @@ class AuthService {
           true
           ? metadata['name']
           .toString()
+          .trim()
           : (fallbackName ??
           user.email
               ?.split('@')
               .first ??
           'NIMO User');
 
-      final avatarUrl =
+      final String avatarUrl =
           metadata['avatar_url']
               ?.toString() ??
               '';
+
+      final now = DateTime.now()
+          .toUtc()
+          .toIso8601String();
 
       await _supabase
           .from('profiles')
@@ -309,16 +306,18 @@ class AuthService {
         'id': user.id,
         'name': name,
         'email': user.email ?? '',
-        'avatar_url':
-        avatarUrl,
+        'avatar_url': avatarUrl,
+        'bio': '',
         'description': '',
         'is_online': true,
-        'last_seen':
-        DateTime.now()
-            .toUtc()
-            .toIso8601String(),
+        'last_seen': now,
         'typing_to': '',
+        'updated_at': now,
       });
+
+      debugPrint(
+        'PROFILE CREATED: $name',
+      );
     } catch (e) {
       debugPrint(
         'CREATE PROFILE ERROR: $e',
@@ -326,31 +325,29 @@ class AuthService {
     }
   }
 
-  // ==========================================
+  // ==========================================================
   // UPDATE ONLINE STATUS
-  // ==========================================
+  // ==========================================================
 
-  static Future<void>
-  _updateOnlineStatus(
+  static Future<void> _updateOnlineStatus(
       bool online,
       ) async {
     final user = currentUser;
 
-    if (user == null) {
-      return;
-    }
+    if (user == null) return;
 
     try {
+      final now = DateTime.now()
+          .toUtc()
+          .toIso8601String();
+
       await _supabase
           .from('profiles')
           .update({
         'is_online': online,
-        'last_seen':
-        DateTime.now()
-            .toUtc()
-            .toIso8601String(),
-      })
-          .eq('id', user.id);
+        'last_seen': now,
+        'updated_at': now,
+      }).eq('id', user.id);
     } catch (e) {
       debugPrint(
         'ONLINE STATUS ERROR: $e',

@@ -5,65 +5,55 @@ class NotificationService {
   NotificationService._();
 
   // =========================================================
-  // PLUGIN
+  // PLUGIN INSTANCE
   // =========================================================
-
   static final FlutterLocalNotificationsPlugin notifications =
   FlutterLocalNotificationsPlugin();
 
   // =========================================================
   // CHANNEL INFO
   // =========================================================
-
   static const String channelId = 'nimo_messages';
   static const String channelName = 'NIMO Messages';
-  static const String channelDescription =
-      'Chat message notifications';
+  static const String channelDescription = 'Chat message notifications';
 
   static bool _initialized = false;
 
   // =========================================================
   // INITIALIZE
   // =========================================================
-
   static Future<void> initialize() async {
     if (_initialized) return;
 
     try {
-      // Android initialization
       const androidSettings =
-      AndroidInitializationSettings(
-        '@mipmap/ic_launcher',
-      );
+      AndroidInitializationSettings('@mipmap/ic_launcher');
 
-      // iOS initialization
       const darwinSettings = DarwinInitializationSettings(
         requestAlertPermission: true,
         requestBadgePermission: true,
         requestSoundPermission: true,
       );
 
-      const settings = InitializationSettings(
+      const initializationSettings = InitializationSettings(
         android: androidSettings,
         iOS: darwinSettings,
       );
 
+      // NEW API (flutter_local_notifications 21.x)
       await notifications.initialize(
-        settings,
-        onDidReceiveNotificationResponse:
-        _onNotificationTapped,
+        settings: initializationSettings,
+        onDidReceiveNotificationResponse: _onNotificationTapped,
       );
 
-      // Android-specific setup
       final androidImplementation =
       notifications.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
 
-      // Request Android 13+ notification permission
-      await androidImplementation
-          ?.requestNotificationsPermission();
+      // Android 13+ permission
+      await androidImplementation?.requestNotificationsPermission();
 
-      // Create notification channel
+      // Create Android notification channel
       const channel = AndroidNotificationChannel(
         channelId,
         channelName,
@@ -73,8 +63,7 @@ class NotificationService {
         enableVibration: true,
       );
 
-      await androidImplementation
-          ?.createNotificationChannel(channel);
+      await androidImplementation?.createNotificationChannel(channel);
 
       _initialized = true;
     } catch (e) {
@@ -85,22 +74,16 @@ class NotificationService {
   // =========================================================
   // TAP HANDLER
   // =========================================================
-
-  static void _onNotificationTapped(
-      NotificationResponse response,
-      ) {
+  static void _onNotificationTapped(NotificationResponse response) {
     debugPrint(
       'Notification tapped. Payload: ${response.payload}',
     );
-    // You can add navigation logic here later.
   }
 
   // =========================================================
-  // NOTIFICATION DETAILS
+  // DEFAULT NOTIFICATION DETAILS
   // =========================================================
-
-  static const NotificationDetails _details =
-  NotificationDetails(
+  static const NotificationDetails _details = NotificationDetails(
     android: AndroidNotificationDetails(
       channelId,
       channelName,
@@ -122,7 +105,6 @@ class NotificationService {
   // =========================================================
   // SHOW GENERIC NOTIFICATION
   // =========================================================
-
   static Future<void> showNotification({
     required String title,
     required String body,
@@ -137,11 +119,12 @@ class NotificationService {
               .millisecondsSinceEpoch
               .remainder(2147483647);
 
+      // NEW API (flutter_local_notifications 21.x)
       await notifications.show(
-        notificationId,
-        title,
-        body,
-        _details,
+        id: notificationId,
+        title: title,
+        body: body,
+        notificationDetails: _details,
         payload: payload,
       );
     } catch (e) {
@@ -150,9 +133,8 @@ class NotificationService {
   }
 
   // =========================================================
-  // CHAT MESSAGE NOTIFICATION
+  // MESSAGE NOTIFICATION
   // =========================================================
-
   static Future<void> showMessageNotification({
     required String senderName,
     required String message,
@@ -170,7 +152,6 @@ class NotificationService {
   // =========================================================
   // MEDIA NOTIFICATION
   // =========================================================
-
   static Future<void> showMediaNotification({
     required String senderName,
     required String type,
@@ -188,7 +169,6 @@ class NotificationService {
   // =========================================================
   // MISSED CALL NOTIFICATION
   // =========================================================
-
   static Future<void> showMissedCallNotification({
     required String callerName,
     int? id,
@@ -205,7 +185,6 @@ class NotificationService {
   // =========================================================
   // TYPING NOTIFICATION
   // =========================================================
-
   static Future<void> showTypingNotification({
     required String name,
     int? id,
@@ -222,10 +201,10 @@ class NotificationService {
   // =========================================================
   // CANCEL ONE
   // =========================================================
-
   static Future<void> cancelNotification(int id) async {
     try {
-      await notifications.cancel(id);
+      // NEW API (flutter_local_notifications 21.x)
+      await notifications.cancel(id: id);
     } catch (e) {
       debugPrint('CANCEL NOTIFICATION ERROR: $e');
     }
@@ -234,7 +213,6 @@ class NotificationService {
   // =========================================================
   // CANCEL ALL
   // =========================================================
-
   static Future<void> cancelAllNotifications() async {
     try {
       await notifications.cancelAll();

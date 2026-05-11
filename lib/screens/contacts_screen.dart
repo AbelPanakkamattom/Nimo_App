@@ -489,11 +489,11 @@ class _ContactsScreenState
   // SHARE
   // ==========================================
 
-  Future<void> shareContact(
-      String email,
-      ) async {
-    await Share.share(
-      'Join me on NIMO 🚀\n$email',
+  Future<void> shareContact(String email) async {
+    await SharePlus.instance.share(
+      ShareParams(
+        text: 'Join me on NIMO 🚀\n$email',
+      ),
     );
   }
 

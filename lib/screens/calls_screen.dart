@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../screens/contacts_screen.dart';
+
 class CallsScreen extends StatefulWidget {
   const CallsScreen({super.key});
 
@@ -8,6 +10,9 @@ class CallsScreen extends StatefulWidget {
 }
 
 class _CallsScreenState extends State<CallsScreen> {
+  static const Color primary = Color(0xFF6C5CE7);
+  static const Color background = Color(0xFFF5F6FF);
+
   final TextEditingController _searchController = TextEditingController();
 
   late List<CallModel> _allCalls;
@@ -20,6 +25,10 @@ class _CallsScreenState extends State<CallsScreen> {
     _filteredCalls = List<CallModel>.from(_dummyCalls);
     _searchController.addListener(_filterCalls);
   }
+
+  // =========================================================
+  // FILTER CALLS
+  // =========================================================
 
   void _filterCalls() {
     final query = _searchController.text.trim().toLowerCase();
@@ -35,6 +44,10 @@ class _CallsScreenState extends State<CallsScreen> {
       }
     });
   }
+
+  // =========================================================
+  // GROUP CALLS
+  // =========================================================
 
   Map<String, List<CallModel>> _groupCalls() {
     final Map<String, List<CallModel>> grouped = {
@@ -56,6 +69,10 @@ class _CallsScreenState extends State<CallsScreen> {
     return grouped;
   }
 
+  // =========================================================
+  // START CALL
+  // =========================================================
+
   void _callUser(CallModel call) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -69,14 +86,22 @@ class _CallsScreenState extends State<CallsScreen> {
     );
   }
 
-  void _createCallLink() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Create call link feature coming soon.'),
-        behavior: SnackBarBehavior.floating,
+  // =========================================================
+  // NEW CALL
+  // =========================================================
+
+  void _openContacts() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ContactsScreen(),
       ),
     );
   }
+
+  // =========================================================
+  // EMPTY STATE
+  // =========================================================
 
   Widget _buildEmptyState() {
     return Center(
@@ -89,13 +114,13 @@ class _CallsScreenState extends State<CallsScreen> {
               width: 96,
               height: 96,
               decoration: BoxDecoration(
-                color: const Color(0xFF6C5CE7).withAlpha(25),
+                color: primary.withAlpha(25),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
                 Icons.call_outlined,
                 size: 48,
-                color: Color(0xFF6C5CE7),
+                color: primary,
               ),
             ),
             const SizedBox(height: 24),
@@ -116,11 +141,32 @@ class _CallsScreenState extends State<CallsScreen> {
                 color: Colors.grey.shade600,
               ),
             ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _openContacts,
+              icon: const Icon(Icons.add_call),
+              label: const Text('Start New Call'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 14,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
+
+  // =========================================================
+  // HEADER
+  // =========================================================
 
   Widget _buildHeader() {
     return Padding(
@@ -150,10 +196,11 @@ class _CallsScreenState extends State<CallsScreen> {
               ],
             ),
             child: IconButton(
-              onPressed: _createCallLink,
+              onPressed: _openContacts,
+              tooltip: 'New Call',
               icon: const Icon(
                 Icons.add_ic_call,
-                color: Color(0xFF6C5CE7),
+                color: primary,
               ),
             ),
           ),
@@ -161,6 +208,10 @@ class _CallsScreenState extends State<CallsScreen> {
       ),
     );
   }
+
+  // =========================================================
+  // SEARCH BAR
+  // =========================================================
 
   Widget _buildSearchBar() {
     return Padding(
@@ -189,12 +240,17 @@ class _CallsScreenState extends State<CallsScreen> {
               color: Colors.grey.shade600,
             ),
             border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(vertical: 18),
+            contentPadding:
+            const EdgeInsets.symmetric(vertical: 18),
           ),
         ),
       ),
     );
   }
+
+  // =========================================================
+  // CALL LIST
+  // =========================================================
 
   Widget _buildCallList() {
     if (_filteredCalls.isEmpty) {
@@ -204,7 +260,7 @@ class _CallsScreenState extends State<CallsScreen> {
     final groupedCalls = _groupCalls();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 110),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
       children: groupedCalls.entries.map((entry) {
         if (entry.value.isEmpty) {
           return const SizedBox.shrink();
@@ -214,7 +270,8 @@ class _CallsScreenState extends State<CallsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 12),
+              padding:
+              const EdgeInsets.only(top: 8, bottom: 12),
               child: Text(
                 entry.key,
                 style: TextStyle(
@@ -236,10 +293,14 @@ class _CallsScreenState extends State<CallsScreen> {
     );
   }
 
+  // =========================================================
+  // BUILD
+  // =========================================================
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FF),
+      backgroundColor: background,
       body: SafeArea(
         child: Column(
           children: [
@@ -254,6 +315,10 @@ class _CallsScreenState extends State<CallsScreen> {
     );
   }
 
+  // =========================================================
+  // DISPOSE
+  // =========================================================
+
   @override
   void dispose() {
     _searchController.removeListener(_filterCalls);
@@ -261,6 +326,10 @@ class _CallsScreenState extends State<CallsScreen> {
     super.dispose();
   }
 }
+
+// =========================================================
+// CALL MODEL
+// =========================================================
 
 class CallModel {
   final String name;
@@ -281,6 +350,10 @@ enum CallType {
   outgoing,
   missed,
 }
+
+// =========================================================
+// CALL TILE
+// =========================================================
 
 class _CallTile extends StatelessWidget {
   final CallModel data;
@@ -350,7 +423,8 @@ class _CallTile extends StatelessWidget {
           const SizedBox(width: 14),
           Expanded(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment:
+              CrossAxisAlignment.start,
               children: [
                 Text(
                   data.name,
@@ -372,7 +446,8 @@ class _CallTile extends StatelessWidget {
                     Expanded(
                       child: Text(
                         data.time,
-                        overflow: TextOverflow.ellipsis,
+                        overflow:
+                        TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 13,
                           color: Colors.grey.shade600,
@@ -390,12 +465,14 @@ class _CallTile extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFF6C5CE7).withAlpha(26),
+                color: primary.withAlpha(26),
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                data.video ? Icons.videocam : Icons.call,
-                color: const Color(0xFF6C5CE7),
+                data.video
+                    ? Icons.videocam
+                    : Icons.call,
+                color: primary,
               ),
             ),
           ),
@@ -403,7 +480,13 @@ class _CallTile extends StatelessWidget {
       ),
     );
   }
+
+  static const Color primary = Color(0xFF6C5CE7);
 }
+
+// =========================================================
+// DUMMY CALL DATA
+// =========================================================
 
 const List<CallModel> _dummyCalls = [
   CallModel(
