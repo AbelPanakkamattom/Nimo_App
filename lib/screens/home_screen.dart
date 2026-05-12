@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../services/zego_call_service.dart';
 
 import 'ai_screen.dart';
 import 'calls_screen.dart';
@@ -15,22 +18,10 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // =========================================================
-  // COLORS
-  // =========================================================
-
   static const Color primary = Color(0xFF6C5CE7);
   static const Color background = Color(0xFFF5F6FF);
 
-  // =========================================================
-  // STATE
-  // =========================================================
-
   int currentIndex = 0;
-
-  // =========================================================
-  // SCREENS
-  // =========================================================
 
   final List<Widget> screens = const [
     ChatsScreen(),
@@ -39,10 +30,6 @@ class _HomeScreenState extends State<HomeScreen> {
     AIScreen(),
     ProfileScreen(),
   ];
-
-  // =========================================================
-  // NAVIGATION ITEMS
-  // =========================================================
 
   final List<_BottomItem> items = const [
     _BottomItem(
@@ -68,11 +55,85 @@ class _HomeScreenState extends State<HomeScreen> {
   ];
 
   // =========================================================
+  // INIT STATE
+  // =========================================================
+  @override
+  void initState() {
+    super.initState();
+    _initializeZego();
+  }
+
+  // =========================================================
+  // INITIALIZE ZEGO
+  // =========================================================
+  Future<void> _initializeZego() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+
+      if (user == null) {
+        return;
+      }
+
+      final userName =
+      user.userMetadata?['full_name']
+          ?.toString()
+          .trim()
+          .isNotEmpty ==
+          true
+          ? user.userMetadata!['full_name']
+          .toString()
+          .trim()
+          : user.userMetadata?['name']
+          ?.toString()
+          .trim()
+          .isNotEmpty ==
+          true
+          ? user.userMetadata!['name']
+          .toString()
+          .trim()
+          : user.email?.split('@').first ?? 'User';
+
+      await ZegoCallService.init(
+        userID: user.id,
+        userName: userName,
+      );
+    } catch (e) {
+      debugPrint('ZEGO INITIALIZATION ERROR: $e');
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'ZEGOCLOUD initialization failed: $e',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  // =========================================================
+  // DISPOSE
+  // IMPORTANT:
+  // DO NOT call ZegoCallService.uninit() here.
+  // ZEGO must remain active during the entire logged-in session.
+  // It is properly cleaned up in AuthService.logout().
+  // =========================================================
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  // =========================================================
   // TAB CHANGE
   // =========================================================
-
   void changeTab(int index) {
-    if (currentIndex == index) return;
+    if (currentIndex == index) {
+      return;
+    }
 
     setState(() {
       currentIndex = index;
@@ -80,21 +141,20 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // =========================================================
-  // FLOATING ACTION BUTTON
+  // FAB
   // =========================================================
-
   bool get _showFab => currentIndex != 4;
 
   IconData _buildFabIcon() {
     switch (currentIndex) {
       case 0:
-        return Icons.edit_rounded; // Chats
+        return Icons.edit_rounded;
       case 1:
-        return Icons.add_rounded; // Email
+        return Icons.add_rounded;
       case 2:
-        return Icons.call_rounded; // Calls
+        return Icons.call_rounded;
       case 3:
-        return Icons.auto_awesome_rounded; // AI
+        return Icons.auto_awesome_rounded;
       default:
         return Icons.add_rounded;
     }
@@ -102,10 +162,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   VoidCallback? _buildFabAction() {
     switch (currentIndex) {
-    // =====================================================
-    // CHATS → OPEN CONTACTS SCREEN
-    // =====================================================
       case 0:
+      case 2:
         return () {
           Navigator.push(
             context,
@@ -115,9 +173,6 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         };
 
-    // =====================================================
-    // EMAIL
-    // =====================================================
       case 1:
         return () {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -128,27 +183,13 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         };
 
-    // =====================================================
-    // CALLS
-    // =====================================================
-      case 2:
-        return () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => const ContactsScreen(),
-            ),
-          );
-        };
-
-    // =====================================================
-    // AI
-    // =====================================================
       case 3:
         return () {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Start a new AI conversation'),
+              content: Text(
+                'Start a new AI conversation',
+              ),
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -162,28 +203,20 @@ class _HomeScreenState extends State<HomeScreen> {
   // =========================================================
   // BUILD
   // =========================================================
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: background,
       extendBody: true,
-
-      // =====================================================
-      // MAIN CONTENT
-      // =====================================================
       body: SafeArea(
         child: IndexedStack(
           index: currentIndex,
           children: screens,
         ),
       ),
-
-      // =====================================================
-      // FLOATING ACTION BUTTON
-      // =====================================================
       floatingActionButton: _showFab
           ? FloatingActionButton(
+        heroTag: 'home_screen_fab',
         onPressed: _buildFabAction(),
         backgroundColor: primary,
         foregroundColor: Colors.white,
@@ -191,12 +224,8 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Icon(_buildFabIcon()),
       )
           : null,
-
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-
-      // =====================================================
-      // CUSTOM BOTTOM NAVIGATION BAR
-      // =====================================================
+      floatingActionButtonLocation:
+      FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.only(
           left: 14,
@@ -220,25 +249,31 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            mainAxisAlignment:
+            MainAxisAlignment.spaceAround,
             children: List.generate(
               items.length,
                   (index) {
-                final bool active = currentIndex == index;
+                final active = currentIndex == index;
 
                 return InkWell(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius:
+                  BorderRadius.circular(24),
                   onTap: () => changeTab(index),
                   child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
+                    duration:
+                    const Duration(milliseconds: 250),
                     curve: Curves.easeInOut,
                     padding: EdgeInsets.symmetric(
                       horizontal: active ? 16 : 12,
                       vertical: 10,
                     ),
                     decoration: BoxDecoration(
-                      color: active ? primary : Colors.transparent,
-                      borderRadius: BorderRadius.circular(22),
+                      color: active
+                          ? primary
+                          : Colors.transparent,
+                      borderRadius:
+                      BorderRadius.circular(22),
                     ),
                     child: Row(
                       children: [
@@ -255,7 +290,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             items[index].label,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontWeight: FontWeight.w600,
+                              fontWeight:
+                              FontWeight.w600,
                               fontSize: 14,
                             ),
                           ),
@@ -272,10 +308,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
-
-// =========================================================
-// BOTTOM NAVIGATION ITEM MODEL
-// =========================================================
 
 class _BottomItem {
   final IconData icon;

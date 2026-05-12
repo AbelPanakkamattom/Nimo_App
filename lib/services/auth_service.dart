@@ -32,12 +32,12 @@ class AuthService {
     required String password,
   }) async {
     try {
-      final response =
-      await _supabase.auth.signUp(
-        email: email.trim(),
+      final response = await _supabase.auth.signUp(
+        email: email.trim().toLowerCase(),
         password: password.trim(),
         data: {
           'name': name.trim(),
+          'full_name': name.trim(),
         },
       );
 
@@ -54,7 +54,7 @@ class AuthService {
 
       await _updateOnlineStatus(true);
 
-      // Initialize ZEGOCLOUD
+      // Initialize ZEGO
       await _initializeZego(user);
 
       return null;
@@ -75,23 +75,19 @@ class AuthService {
     required String password,
   }) async {
     try {
-      final response = await _supabase
-          .auth
-          .signInWithPassword(
-        email: email.trim(),
+      final response =
+      await _supabase.auth.signInWithPassword(
+        email: email.trim().toLowerCase(),
         password: password.trim(),
       );
 
       final user = response.user;
 
       if (user != null) {
-        await _ensureProfileExists(
-          user: user,
-        );
-
+        await _ensureProfileExists(user: user);
         await _updateOnlineStatus(true);
 
-        // Initialize ZEGOCLOUD
+        // Initialize ZEGO
         await _initializeZego(user);
       }
 
@@ -105,7 +101,7 @@ class AuthService {
   }
 
   // ==========================================================
-  // GOOGLE SIGN-IN (SUPABASE OAUTH)
+  // GOOGLE SIGN-IN
   // ==========================================================
 
   static Future<String?> signInWithGoogle() async {
@@ -115,12 +111,6 @@ class AuthService {
         redirectTo:
         'io.supabase.flutter://login-callback/',
       );
-
-      // NOTE:
-      // After OAuth redirect completes, main.dart
-      // and AuthGate will re-open the app.
-      // ZEGOCLOUD will be initialized there
-      // for the authenticated user.
 
       return null;
     } on AuthException catch (e) {
@@ -139,17 +129,15 @@ class AuthService {
       String email,
       ) async {
     try {
-      await _supabase.auth
-          .resetPasswordForEmail(
-        email.trim(),
+      await _supabase.auth.resetPasswordForEmail(
+        email.trim().toLowerCase(),
       );
+
       return null;
     } on AuthException catch (e) {
       return e.message;
     } catch (e) {
-      debugPrint(
-        'RESET PASSWORD ERROR: $e',
-      );
+      debugPrint('RESET PASSWORD ERROR: $e');
       return 'Failed to send reset email.';
     }
   }
@@ -162,7 +150,7 @@ class AuthService {
     try {
       await _updateOnlineStatus(false);
 
-      // Stop ZEGOCLOUD
+      // Stop ZEGO completely
       ZegoCallService.uninit();
 
       // Sign out from Supabase
@@ -193,9 +181,7 @@ class AuthService {
 
       return null;
     } catch (e) {
-      debugPrint(
-        'DELETE ACCOUNT ERROR: $e',
-      );
+      debugPrint('DELETE ACCOUNT ERROR: $e');
       return 'Failed to delete account.';
     }
   }
@@ -204,23 +190,29 @@ class AuthService {
   // AUTH STATE CHANGES
   // ==========================================================
 
-  static Stream<AuthState>
-  get authStateChanges =>
+  static Stream<AuthState> get authStateChanges =>
       _supabase.auth.onAuthStateChange;
 
   // ==========================================================
-  // INITIALIZE ZEGOCLOUD
+  // INITIALIZE ZEGO
   // ==========================================================
 
   static Future<void> _initializeZego(
       User user,
       ) async {
     try {
-      final metadata =
-          user.userMetadata ?? {};
+      final metadata = user.userMetadata ?? {};
 
       final String userName =
-      metadata['name']
+      metadata['full_name']
+          ?.toString()
+          .trim()
+          .isNotEmpty ==
+          true
+          ? metadata['full_name']
+          .toString()
+          .trim()
+          : metadata['name']
           ?.toString()
           .trim()
           .isNotEmpty ==
@@ -233,11 +225,14 @@ class AuthService {
           .first ??
           'NIMO User';
 
-      // Ensure previous session is closed
+      // Reset any previous ZEGO session
       ZegoCallService.uninit();
 
-      // Initialize for current user
-      ZegoCallService.init(
+      // IMPORTANT:
+      // Pass the original Supabase UUID.
+      // ZegoCallService will convert it to
+      // a ZEGO-safe ID automatically.
+      await ZegoCallService.init(
         userID: user.id,
         userName: userName,
       );
@@ -247,9 +242,7 @@ class AuthService {
             '$userName (${user.id})',
       );
     } catch (e) {
-      debugPrint(
-        'ZEGO INIT ERROR: $e',
-      );
+      debugPrint('ZEGO INIT ERROR: $e');
     }
   }
 
@@ -262,8 +255,7 @@ class AuthService {
     String? fallbackName,
   }) async {
     try {
-      final existing =
-      await _supabase
+      final existing = await _supabase
           .from('profiles')
           .select('id')
           .eq('id', user.id)
@@ -273,11 +265,18 @@ class AuthService {
         return;
       }
 
-      final metadata =
-          user.userMetadata ?? {};
+      final metadata = user.userMetadata ?? {};
 
       final String name =
-      metadata['name']
+      metadata['full_name']
+          ?.toString()
+          .trim()
+          .isNotEmpty ==
+          true
+          ? metadata['full_name']
+          .toString()
+          .trim()
+          : metadata['name']
           ?.toString()
           .trim()
           .isNotEmpty ==
@@ -300,11 +299,11 @@ class AuthService {
           .toUtc()
           .toIso8601String();
 
-      await _supabase
-          .from('profiles')
-          .insert({
+      await _supabase.from('profiles').insert({
         'id': user.id,
         'name': name,
+        'full_name': name,
+        'display_name': name,
         'email': user.email ?? '',
         'avatar_url': avatarUrl,
         'bio': '',
@@ -312,16 +311,13 @@ class AuthService {
         'is_online': true,
         'last_seen': now,
         'typing_to': '',
+        'created_at': now,
         'updated_at': now,
       });
 
-      debugPrint(
-        'PROFILE CREATED: $name',
-      );
+      debugPrint('PROFILE CREATED: $name');
     } catch (e) {
-      debugPrint(
-        'CREATE PROFILE ERROR: $e',
-      );
+      debugPrint('CREATE PROFILE ERROR: $e');
     }
   }
 
@@ -334,7 +330,9 @@ class AuthService {
       ) async {
     final user = currentUser;
 
-    if (user == null) return;
+    if (user == null) {
+      return;
+    }
 
     try {
       final now = DateTime.now()
@@ -347,11 +345,10 @@ class AuthService {
         'is_online': online,
         'last_seen': now,
         'updated_at': now,
-      }).eq('id', user.id);
+      })
+          .eq('id', user.id);
     } catch (e) {
-      debugPrint(
-        'ONLINE STATUS ERROR: $e',
-      );
+      debugPrint('ONLINE STATUS ERROR: $e');
     }
   }
 }

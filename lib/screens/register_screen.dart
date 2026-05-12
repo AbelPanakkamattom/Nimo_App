@@ -20,41 +20,38 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  // Colors
   static const Color primary = Color(0xFF6C5CE7);
   static const Color secondary = Color(0xFF8E7BFF);
   static const Color background = Color(0xFFF5F6FF);
 
-  // Services
   final SupabaseClient client = Supabase.instance.client;
   final ImagePicker picker = ImagePicker();
 
-  // Controllers
   final TextEditingController nameController = TextEditingController();
   final TextEditingController bioController = TextEditingController();
 
-  // State
   File? selectedImage;
+
   bool loading = false;
   bool imageLoading = false;
 
-  // --------------------------------------------------
-  // Snackbar
-  // --------------------------------------------------
-  void showMessage(String text) {
+  // ===============================================================
+  // SHOW MESSAGE
+  // ===============================================================
+  void showMessage(String message) {
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(text),
+        content: Text(message),
         behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
-  // --------------------------------------------------
-  // Logout
-  // --------------------------------------------------
+  // ===============================================================
+  // LOGOUT
+  // ===============================================================
   Future<void> logout() async {
     try {
       await client.auth.signOut();
@@ -71,42 +68,47 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  // --------------------------------------------------
-  // Pick Image
-  // --------------------------------------------------
+  // ===============================================================
+  // PICK IMAGE
+  // ===============================================================
   Future<void> pickImage() async {
     try {
-      final XFile? picked = await picker.pickImage(
+      final XFile? file = await picker.pickImage(
         source: ImageSource.gallery,
         imageQuality: 85,
       );
 
-      if (picked == null) return;
+      if (file == null) return;
+
+      if (!mounted) return;
 
       setState(() {
-        selectedImage = File(picked.path);
+        selectedImage = File(file.path);
       });
     } catch (e) {
-      debugPrint('IMAGE PICK ERROR: $e');
       showMessage('Failed to pick image.');
     }
   }
 
-  // --------------------------------------------------
-  // Upload Avatar
-  // --------------------------------------------------
+  // ===============================================================
+  // UPLOAD AVATAR
+  // ===============================================================
   Future<String?> uploadAvatar(String userId) async {
     if (selectedImage == null) return null;
 
     try {
-      setState(() => imageLoading = true);
+      if (mounted) {
+        setState(() {
+          imageLoading = true;
+        });
+      }
 
-      final storage = client.storage.from('avatarz');
+      final bucket = client.storage.from('avatarz');
 
       final filePath =
           '$userId/avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
-      await storage.upload(
+      await bucket.upload(
         filePath,
         selectedImage!,
         fileOptions: const FileOptions(
@@ -115,23 +117,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
       );
 
-      final publicUrl = storage.getPublicUrl(filePath);
+      final publicUrl = bucket.getPublicUrl(filePath);
 
       return '$publicUrl?t=${DateTime.now().millisecondsSinceEpoch}';
     } catch (e) {
-      debugPrint('UPLOAD ERROR: $e');
       showMessage('Image upload failed.');
       return null;
     } finally {
       if (mounted) {
-        setState(() => imageLoading = false);
+        setState(() {
+          imageLoading = false;
+        });
       }
     }
   }
 
-  // --------------------------------------------------
-  // Create Profile
-  // --------------------------------------------------
+  // ===============================================================
+  // CREATE PROFILE
+  // ===============================================================
   Future<void> createProfile() async {
     final user = client.auth.currentUser;
 
@@ -150,21 +153,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     if (loading) return;
 
-    setState(() => loading = true);
+    if (mounted) {
+      setState(() {
+        loading = true;
+      });
+    }
 
     try {
       final avatarUrl = await uploadAvatar(user.id);
 
+      final now = DateTime.now().toUtc().toIso8601String();
+
+      // Insert or update profile
       await client.from('profiles').upsert({
         'id': user.id,
         'email': widget.email.trim().toLowerCase(),
         'name': name,
-        'description': bio,
         'bio': bio,
+        'description': bio,
         'avatar_url': avatarUrl ?? '',
         'is_online': true,
-        'last_seen': DateTime.now().toUtc().toIso8601String(),
-        'created_at': DateTime.now().toUtc().toIso8601String(),
+        'last_seen': now,
+        'created_at': now,
       });
 
       if (!mounted) return;
@@ -177,18 +187,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
             (_) => false,
       );
     } catch (e) {
-      debugPrint('REGISTER ERROR: $e');
-      showMessage('Failed to create profile.');
+      showMessage('Failed to create profile: $e');
     } finally {
       if (mounted) {
-        setState(() => loading = false);
+        setState(() {
+          loading = false;
+        });
       }
     }
   }
 
-  // --------------------------------------------------
-  // Logo
-  // --------------------------------------------------
+  // ===============================================================
+  // LOGO
+  // ===============================================================
   Widget buildLogo() {
     return Column(
       children: [
@@ -207,7 +218,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           style: TextStyle(
             fontSize: 28,
             fontWeight: FontWeight.w800,
-            color: Color(0xFF111111),
+            color: Colors.black,
           ),
         ),
         const SizedBox(height: 8),
@@ -222,9 +233,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  // --------------------------------------------------
-  // Avatar
-  // --------------------------------------------------
+  // ===============================================================
+  // AVATAR
+  // ===============================================================
   Widget buildAvatar() {
     return Stack(
       alignment: Alignment.center,
@@ -234,22 +245,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
           child: Container(
             width: 132,
             height: 132,
+            padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: const LinearGradient(
                 colors: [secondary, primary],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: primary.withAlpha(70),
+                  color: primary.withValues(alpha: 0.28),
                   blurRadius: 24,
                   offset: const Offset(0, 10),
                 ),
               ],
             ),
-            padding: const EdgeInsets.all(4),
             child: CircleAvatar(
               backgroundColor: Colors.white,
               backgroundImage:
@@ -264,6 +273,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
           ),
         ),
+
         Positioned(
           bottom: 4,
           right: 4,
@@ -284,12 +294,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
           ),
         ),
+
         if (imageLoading)
           Container(
             width: 132,
             height: 132,
             decoration: BoxDecoration(
-              color: Colors.black.withAlpha(120),
+              color: Colors.black.withValues(alpha: 0.45),
               shape: BoxShape.circle,
             ),
             child: const Center(
@@ -302,9 +313,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  // --------------------------------------------------
-  // Email Card
-  // --------------------------------------------------
+  // ===============================================================
+  // EMAIL CARD
+  // ===============================================================
   Widget buildEmailCard() {
     return Container(
       width: double.infinity,
@@ -317,7 +328,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withAlpha(8),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 12,
             offset: const Offset(0, 6),
           ),
@@ -344,9 +355,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  // --------------------------------------------------
-  // Input Decoration
-  // --------------------------------------------------
+  // ===============================================================
+  // INPUT DECORATION
+  // ===============================================================
   InputDecoration inputDecoration({
     required String hint,
     required IconData icon,
@@ -379,9 +390,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  // --------------------------------------------------
-  // Create Button
-  // --------------------------------------------------
+  // ===============================================================
+  // CREATE BUTTON
+  // ===============================================================
   Widget buildCreateButton() {
     return Container(
       width: double.infinity,
@@ -393,7 +404,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
         boxShadow: [
           BoxShadow(
-            color: primary.withAlpha(80),
+            color: primary.withValues(alpha: 0.32),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),
@@ -430,9 +441,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  // --------------------------------------------------
-  // Build
-  // --------------------------------------------------
+  // ===============================================================
+  // BUILD
+  // ===============================================================
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -467,80 +478,64 @@ class _RegisterScreenState extends State<RegisterScreen> {
         body: GestureDetector(
           onTap: () => FocusScope.of(context).unfocus(),
           child: SafeArea(
-            child: AnimatedPadding(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOut,
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
-              ),
-              child: SingleChildScrollView(
-                reverse: true,
-                keyboardDismissBehavior:
-                ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 8),
-                    buildLogo(),
-                    const SizedBox(height: 28),
-                    buildAvatar(),
-                    const SizedBox(height: 14),
-                    Text(
-                      'Tap to add profile photo',
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 13,
-                      ),
+            child: SingleChildScrollView(
+              keyboardDismissBehavior:
+              ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 60),
+              child: Column(
+                children: [
+                  buildLogo(),
+                  const SizedBox(height: 28),
+                  buildAvatar(),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Tap to add profile photo',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 13,
                     ),
-                    const SizedBox(height: 30),
-                    buildEmailCard(),
-                    const SizedBox(height: 20),
+                  ),
+                  const SizedBox(height: 30),
+                  buildEmailCard(),
+                  const SizedBox(height: 20),
 
-                    // Name
-                    TextField(
-                      controller: nameController,
-                      textCapitalization: TextCapitalization.words,
-                      textInputAction: TextInputAction.next,
-                      decoration: inputDecoration(
-                        hint: 'Your name',
-                        icon: Icons.person_outline,
-                      ),
+                  TextField(
+                    controller: nameController,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: inputDecoration(
+                      hint: 'Your name',
+                      icon: Icons.person_outline,
                     ),
+                  ),
 
-                    const SizedBox(height: 20),
+                  const SizedBox(height: 20),
 
-                    // Bio
-                    TextField(
-                      controller: bioController,
-                      maxLines: 4,
-                      maxLength: 150,
-                      textInputAction: TextInputAction.done,
-                      decoration: inputDecoration(
-                        hint: 'About you (optional)',
-                        icon: Icons.info_outline,
-                      ),
+                  TextField(
+                    controller: bioController,
+                    maxLines: 4,
+                    maxLength: 150,
+                    decoration: inputDecoration(
+                      hint: 'About you (optional)',
+                      icon: Icons.info_outline,
                     ),
+                  ),
 
-                    const SizedBox(height: 8),
+                  const SizedBox(height: 8),
 
-                    buildCreateButton(),
+                  buildCreateButton(),
 
-                    const SizedBox(height: 18),
+                  const SizedBox(height: 18),
 
-                    Text(
-                      'Your profile will be visible to your contacts on NIMO.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 12,
-                        height: 1.5,
-                        color: Colors.grey.shade600,
-                      ),
+                  Text(
+                    'Your profile will be visible to your contacts on NIMO.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.5,
+                      color: Colors.grey.shade600,
                     ),
-
-                    // Extra bottom spacing for keyboard safety
-                    const SizedBox(height: 60),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -549,9 +544,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  // --------------------------------------------------
-  // Dispose
-  // --------------------------------------------------
+  // ===============================================================
+  // DISPOSE
+  // ===============================================================
   @override
   void dispose() {
     nameController.dispose();

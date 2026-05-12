@@ -1,966 +1,325 @@
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../widgets/profile_avatarz.dart';
 import 'chat_detail_screen.dart';
+import 'contact_profile_screen.dart';
 
 class ContactsScreen extends StatefulWidget {
   const ContactsScreen({super.key});
 
   @override
-  State<ContactsScreen> createState() =>
-      _ContactsScreenState();
+  State<ContactsScreen> createState() => _ContactsScreenState();
 }
 
-class _ContactsScreenState
-    extends State<ContactsScreen> {
-  final SupabaseClient client =
-      Supabase.instance.client;
+class _ContactsScreenState extends State<ContactsScreen> {
+  static const Color primary = Color(0xFF6C5CE7);
+  static const Color background = Color(0xFFF5F6FF);
 
-  final TextEditingController
-  searchController =
-  TextEditingController();
+  final SupabaseClient supabase = Supabase.instance.client;
+  final TextEditingController searchController = TextEditingController();
 
-  final TextEditingController
-  nameController =
-  TextEditingController();
+  List<Map<String, dynamic>> allUsers = [];
+  List<Map<String, dynamic>> filteredUsers = [];
 
-  final TextEditingController
-  emailController =
-  TextEditingController();
-
-  List<Map<String, dynamic>>
-  contacts = [];
-
-  List<Map<String, dynamic>>
-  filteredContacts = [];
-
-  bool loading = true;
-
-  static const Color primary =
-  Color(0xFF6C5CE7);
-
-  String get myId =>
-      client.auth.currentUser?.id ?? '';
-
-  String get myEmail =>
-      client.auth.currentUser?.email
-          ?.toLowerCase() ??
-          '';
+  bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    loadContacts();
-    searchController.addListener(
-      filterContacts,
-    );
+    _loadUsers();
+    searchController.addListener(_filterUsers);
   }
 
-  // ==========================================
-  // SNACKBAR
-  // ==========================================
-
-  void showMessage(String message) {
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context)
-        .showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior:
-        SnackBarBehavior.floating,
-        backgroundColor: primary,
-      ),
-    );
+  @override
+  void dispose() {
+    searchController.removeListener(_filterUsers);
+    searchController.dispose();
+    super.dispose();
   }
 
-  // ==========================================
-  // LOAD CONTACTS
-  // ==========================================
-
-  Future<void> loadContacts() async {
-    if (myId.isEmpty) {
-      if (mounted) {
-        setState(() {
-          loading = false;
-        });
-      }
-      return;
-    }
-
+  // ===============================================================
+  // LOAD USERS FROM SUPABASE
+  // ===============================================================
+  Future<void> _loadUsers() async {
     try {
-      final response =
-      await client
-          .from('contacts')
+      final currentUserId = supabase.auth.currentUser?.id;
+
+      final response = await supabase
+          .from('profiles')
           .select()
-          .eq('user_id', myId)
-          .order(
-        'created_at',
-        ascending: false,
-      );
+          .neq('id', currentUserId ?? '')
+          .order('name', ascending: true);
 
-      final unique = <
-          String,
-          Map<String, dynamic>>{};
+      final users = List<Map<String, dynamic>>.from(response);
 
-      for (final item
-      in List<Map<String,
-          dynamic>>.from(
-        response,
-      )) {
-        final email =
-        (item['contact_value'] ??
-            '')
-            .toString()
-            .toLowerCase();
+      if (!mounted) return;
 
-        if (email.isNotEmpty) {
-          unique[email] = item;
-        }
-      }
-
-      contacts =
-          unique.values.toList();
-
-      filteredContacts =
-      List<Map<String,
-          dynamic>>.from(
-        contacts,
-      );
+      setState(() {
+        allUsers = users;
+        filteredUsers = users;
+        isLoading = false;
+      });
     } catch (e) {
-      showMessage(
-        'Failed to load contacts.',
+      if (!mounted) return;
+
+      setState(() {
+        isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to load contacts: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     }
-
-    if (!mounted) return;
-
-    setState(() {
-      loading = false;
-    });
   }
 
-  // ==========================================
-  // FILTER
-  // ==========================================
-
-  void filterContacts() {
-    final query =
-    searchController.text
-        .trim()
-        .toLowerCase();
+  // ===============================================================
+  // SEARCH FILTER
+  // ===============================================================
+  void _filterUsers() {
+    final query = searchController.text.trim().toLowerCase();
 
     if (!mounted) return;
 
     setState(() {
       if (query.isEmpty) {
-        filteredContacts =
-        List<Map<String,
-            dynamic>>.from(
-          contacts,
-        );
+        filteredUsers = allUsers;
       } else {
-        filteredContacts =
-            contacts.where((contact) {
-              final name =
-              (contact['custom_name'] ??
-                  '')
-                  .toString()
-                  .toLowerCase();
+        filteredUsers = allUsers.where((user) {
+          final name = _getUserName(user).toLowerCase();
+          final email = _getUserEmail(user).toLowerCase();
 
-              final email =
-              (contact['contact_value'] ??
-                  '')
-                  .toString()
-                  .toLowerCase();
-
-              return name
-                  .contains(query) ||
-                  email.contains(query);
-            }).toList();
+          return name.contains(query) || email.contains(query);
+        }).toList();
       }
     });
   }
 
-  // ==========================================
-  // FIND USER BY EMAIL
-  // ==========================================
+  // ===============================================================
+  // HELPERS
+  // ===============================================================
+  String _getUserName(Map<String, dynamic> user) {
+    final name = (user['name'] ?? '').toString().trim();
+    if (name.isNotEmpty) return name;
 
-  Future<Map<String, dynamic>?>
-  findUserByEmail(
-      String email,
-      ) async {
-    try {
-      final result =
-      await client
-          .from('profiles')
-          .select()
-          .ilike(
-        'email',
-        email,
-      )
-          .limit(1);
-
-      if (result.isEmpty) {
-        return null;
-      }
-
-      return Map<String,
-          dynamic>.from(
-        result.first,
-      );
-    } catch (_) {
-      return null;
+    final email = (user['email'] ?? '').toString().trim();
+    if (email.isNotEmpty) {
+      return email.split('@').first;
     }
+
+    return 'Unknown User';
   }
 
-  // ==========================================
-  // ADD CONTACT
-  // ==========================================
-
-  Future<void> addContact() async {
-    final name =
-    nameController.text.trim();
-
-    final email =
-    emailController.text
-        .trim()
-        .toLowerCase();
-
-    if (name.isEmpty ||
-        email.isEmpty) {
-      showMessage(
-        'Please fill all fields.',
-      );
-      return;
-    }
-
-    if (email == myEmail) {
-      showMessage(
-        'You cannot add yourself.',
-      );
-      return;
-    }
-
-    final alreadyExists =
-    contacts.any(
-          (contact) =>
-      (contact['contact_value'] ??
-          '')
-          .toString()
-          .toLowerCase() ==
-          email,
-    );
-
-    if (alreadyExists) {
-      showMessage(
-        'Contact already exists.',
-      );
-      return;
-    }
-
-    try {
-      final foundUser =
-      await findUserByEmail(
-        email,
-      );
-
-      final data =
-      <String, dynamic>{
-        'user_id': myId,
-        'custom_name': name,
-        'contact_value': email,
-        'created_at':
-        DateTime.now()
-            .toUtc()
-            .toIso8601String(),
-      };
-
-      if (foundUser != null &&
-          foundUser['id'] != null) {
-        data['contact_user_id'] =
-        foundUser['id'];
-      }
-
-      await client
-          .from('contacts')
-          .insert(data);
-
-      if (!mounted) return;
-
-      Navigator.pop(context);
-
-      nameController.clear();
-      emailController.clear();
-
-      showMessage(
-        'Contact added.',
-      );
-
-      await loadContacts();
-
-      if (mounted) {
-        setState(() {});
-      }
-    } catch (e) {
-      showMessage(
-        'Failed to add contact.',
-      );
-    }
+  String _getUserEmail(Map<String, dynamic> user) {
+    return (user['email'] ?? '').toString();
   }
 
-  // ==========================================
-  // EDIT CONTACT
-  // ==========================================
-
-  Future<void> editContact(
-      Map<String, dynamic> contact,
-      ) async {
-    final controller =
-    TextEditingController(
-      text:
-      contact['custom_name']
-          ?.toString() ??
-          '',
-    );
-
-    final result =
-    await showDialog<bool>(
-      context: context,
-      builder: (_) {
-        return AlertDialog(
-          shape:
-          RoundedRectangleBorder(
-            borderRadius:
-            BorderRadius.circular(
-              24,
-            ),
-          ),
-          title: const Text(
-            'Edit Contact',
-          ),
-          content: TextField(
-            controller: controller,
-            decoration:
-            const InputDecoration(
-              labelText: 'Name',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(
-                  context,
-                  false,
-                );
-              },
-              child: const Text(
-                'Cancel',
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(
-                  context,
-                  true,
-                );
-              },
-              child: const Text(
-                'Save',
-              ),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (result != true) {
-      return;
-    }
-
-    final newName =
-    controller.text.trim();
-
-    if (newName.isEmpty) {
-      return;
-    }
-
-    try {
-      await client
-          .from('contacts')
-          .update({
-        'custom_name':
-        newName,
-      })
-          .eq(
-        'id',
-        contact['id'],
-      );
-
-      showMessage(
-        'Contact updated.',
-      );
-
-      await loadContacts();
-
-      if (mounted) {
-        setState(() {});
-      }
-    } catch (_) {
-      showMessage(
-        'Failed to update contact.',
-      );
-    }
+  String _getUserAvatar(Map<String, dynamic> user) {
+    return (user['avatar_url'] ?? '').toString();
   }
 
-  // ==========================================
-  // DELETE CONTACT
-  // ==========================================
-
-  Future<void> deleteContact(
-      String id,
-      ) async {
-    try {
-      await client
-          .from('contacts')
-          .delete()
-          .eq('id', id);
-
-      contacts.removeWhere(
-            (contact) =>
-        contact['id']
-            .toString() ==
-            id,
-      );
-
-      filterContacts();
-
-      showMessage(
-        'Contact deleted.',
-      );
-    } catch (_) {
-      showMessage(
-        'Failed to delete contact.',
-      );
-    }
+  bool _isUserOnline(Map<String, dynamic> user) {
+    return user['is_online'] == true;
   }
 
-  // ==========================================
-  // BLOCK USER
-  // ==========================================
-
-  Future<void> blockUser(
-      Map<String, dynamic> contact,
-      ) async {
-    final blockedId =
-    contact['contact_user_id']
-        ?.toString();
-
-    if (blockedId == null ||
-        blockedId.isEmpty) {
-      showMessage(
-        'This user is not on NIMO.',
-      );
-      return;
-    }
-
-    try {
-      await client
-          .from('blocked_users')
-          .upsert({
-        'blocker_id': myId,
-        'blocked_id':
-        blockedId,
-      });
-
-      showMessage(
-        'User blocked.',
-      );
-    } catch (_) {
-      showMessage(
-        'Failed to block user.',
-      );
-    }
-  }
-
-  // ==========================================
-  // SHARE
-  // ==========================================
-
-  Future<void> shareContact(String email) async {
-    await SharePlus.instance.share(
-      ShareParams(
-        text: 'Join me on NIMO 🚀\n$email',
-      ),
-    );
-  }
-
-  // ==========================================
-  // OPEN CHAT
-  // ==========================================
-
-  void openChat(
-      Map<String, dynamic> contact,
-      ) {
-    final otherUserId =
-    contact['contact_user_id']
-        ?.toString();
-
-    if (otherUserId == null ||
-        otherUserId.isEmpty) {
-      showMessage(
-        'This user is not on NIMO.',
-      );
-      return;
-    }
-
+  // ===============================================================
+  // NAVIGATION
+  // ===============================================================
+  void _openChat(Map<String, dynamic> user) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            ChatDetailScreen(
-              otherUserId:
-              otherUserId,
-              otherUserName:
-              (contact['custom_name'] ??
-                  'User')
-                  .toString(),
-              otherUserAvatar:
-              '',
-            ),
+        builder: (_) => ChatDetailScreen(
+          otherUserId: user['id'].toString(),
+          otherUserName: _getUserName(user),
+          otherUserAvatar: _getUserAvatar(user),
+        ),
       ),
     );
   }
 
-  // ==========================================
-  // ADD CONTACT DIALOG
-  // ==========================================
-
-  void showAddDialog() {
-    nameController.clear();
-    emailController.clear();
-
-    showDialog(
-      context: context,
-      builder: (_) {
-        return Dialog(
-          shape:
-          RoundedRectangleBorder(
-            borderRadius:
-            BorderRadius.circular(
-              28,
-            ),
-          ),
-          child: Padding(
-            padding:
-            const EdgeInsets.all(
-              24,
-            ),
-            child: Column(
-              mainAxisSize:
-              MainAxisSize.min,
-              children: [
-                const Text(
-                  'Add Contact',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight:
-                    FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(
-                  height: 20,
-                ),
-                TextField(
-                  controller:
-                  nameController,
-                  decoration:
-                  const InputDecoration(
-                    labelText: 'Name',
-                    prefixIcon: Icon(
-                      Icons.person,
-                    ),
-                  ),
-                ),
-                const SizedBox(
-                  height: 16,
-                ),
-                TextField(
-                  controller:
-                  emailController,
-                  keyboardType:
-                  TextInputType
-                      .emailAddress,
-                  decoration:
-                  const InputDecoration(
-                    labelText: 'Email',
-                    prefixIcon: Icon(
-                      Icons.email,
-                    ),
-                  ),
-                ),
-                const SizedBox(
-                  height: 24,
-                ),
-                SizedBox(
-                  width:
-                  double.infinity,
-                  height: 50,
-                  child:
-                  ElevatedButton(
-                    onPressed:
-                    addContact,
-                    style:
-                    ElevatedButton
-                        .styleFrom(
-                      backgroundColor:
-                      primary,
-                    ),
-                    child:
-                    const Text(
-                      'Save Contact',
-                      style:
-                      TextStyle(
-                        color: Colors
-                            .white,
-                        fontWeight:
-                        FontWeight
-                            .bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+  void _openProfile(Map<String, dynamic> user) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ContactProfileScreen(
+          userId: user['id'].toString(),
+        ),
+      ),
     );
   }
 
-  // ==========================================
-  // BUILD
-  // ==========================================
+  // ===============================================================
+  // SEARCH BAR
+  // ===============================================================
+  Widget _buildSearchBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: searchController,
+        decoration: InputDecoration(
+          hintText: 'Search contacts...',
+          hintStyle: TextStyle(
+            color: Colors.grey.shade500,
+          ),
+          prefixIcon: const Icon(Icons.search),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 16,
+          ),
+        ),
+      ),
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor:
-      const Color(0xFFF5F6FF),
-      appBar: AppBar(
-        backgroundColor:
-        Colors.transparent,
-        elevation: 0,
-        foregroundColor:
-        Colors.black,
-        title: const Text(
-          'Contacts',
+  // ===============================================================
+  // CONTACT TILE
+  // ===============================================================
+  Widget _buildContactTile(Map<String, dynamic> user) {
+    final name = _getUserName(user);
+    final email = _getUserEmail(user);
+    final avatar = _getUserAvatar(user);
+    final online = _isUserOnline(user);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 8,
+        ),
+        onTap: () => _openChat(user),
+        onLongPress: () => _openProfile(user),
+        leading: ProfileAvatar(
+          name: name,
+          imageUrl: avatar,
+          radius: 26,
+          isOnline: online,
+        ),
+        title: Text(
+          name,
+          style: const TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 16,
+          ),
+        ),
+        subtitle: Text(
+          email,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontWeight:
-            FontWeight.bold,
+            color: Colors.grey.shade600,
+            fontSize: 13,
           ),
         ),
-      ),
-      floatingActionButton:
-      FloatingActionButton(
-        onPressed:
-        showAddDialog,
-        backgroundColor:
-        primary,
-        child: const Icon(
-          Icons.person_add,
-          color: Colors.white,
+        trailing: PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert),
+          onSelected: (value) {
+            if (value == 'chat') {
+              _openChat(user);
+            } else if (value == 'profile') {
+              _openProfile(user);
+            }
+          },
+          itemBuilder: (context) => const [
+            PopupMenuItem(
+              value: 'chat',
+              child: Text('Open Chat'),
+            ),
+            PopupMenuItem(
+              value: 'profile',
+              child: Text('View Profile'),
+            ),
+          ],
         ),
       ),
-      body: loading
-          ? const Center(
-        child:
-        CircularProgressIndicator(
-          color: primary,
+    );
+  }
+
+  // ===============================================================
+  // BODY
+  // ===============================================================
+  Widget _buildBody() {
+    if (isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: primary),
+      );
+    }
+
+    if (filteredUsers.isEmpty) {
+      return Center(
+        child: Text(
+          searchController.text.trim().isEmpty
+              ? 'No contacts found'
+              : 'No matching contacts',
+          style: TextStyle(
+            color: Colors.grey.shade600,
+            fontSize: 16,
+          ),
         ),
-      )
-          : Column(
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadUsers,
+      color: primary,
+      child: ListView(
+        padding: const EdgeInsets.all(20),
         children: [
-          Padding(
-            padding:
-            const EdgeInsets.all(
-              16,
-            ),
-            child: TextField(
-              controller:
-              searchController,
-              decoration:
-              InputDecoration(
-                hintText:
-                'Search contacts',
-                prefixIcon:
-                const Icon(
-                  Icons.search,
-                ),
-                filled: true,
-                fillColor:
-                Colors.white,
-                border:
-                OutlineInputBorder(
-                  borderRadius:
-                  BorderRadius.circular(
-                    20,
-                  ),
-                  borderSide:
-                  BorderSide.none,
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            child:
-            filteredContacts
-                .isEmpty
-                ? Center(
-              child:
-              Column(
-                mainAxisAlignment:
-                MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons
-                        .people_outline,
-                    size:
-                    72,
-                    color: Colors
-                        .grey
-                        .shade400,
-                  ),
-                  const SizedBox(
-                    height:
-                    16,
-                  ),
-                  Text(
-                    'No Contacts Found',
-                    style:
-                    TextStyle(
-                      color: Colors
-                          .grey
-                          .shade600,
-                      fontSize:
-                      16,
-                    ),
-                  ),
-                ],
-              ),
-            )
-                : RefreshIndicator(
-              onRefresh:
-              loadContacts,
-              color:
-              primary,
-              child:
-              ListView.builder(
-                padding:
-                const EdgeInsets.fromLTRB(
-                  16,
-                  0,
-                  16,
-                  120,
-                ),
-                itemCount:
-                filteredContacts.length,
-                itemBuilder:
-                    (
-                    context,
-                    index,
-                    ) {
-                  final contact =
-                  filteredContacts[index];
-
-                  final name =
-                  (contact['custom_name'] ??
-                      'User')
-                      .toString();
-
-                  final email =
-                  (contact['contact_value'] ??
-                      '')
-                      .toString();
-
-                  final hasNimo =
-                      contact['contact_user_id'] !=
-                          null;
-
-                  return Container(
-                    margin:
-                    const EdgeInsets.only(
-                      bottom:
-                      12,
-                    ),
-                    decoration:
-                    BoxDecoration(
-                      color:
-                      Colors.white,
-                      borderRadius:
-                      BorderRadius.circular(
-                        24,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withAlpha(
-                            8,
-                          ),
-                          blurRadius:
-                          10,
-                          offset:
-                          const Offset(
-                            0,
-                            4,
-                          ),
-                        ),
-                      ],
-                    ),
-                    child:
-                    ListTile(
-                      onTap:
-                          () =>
-                          openChat(
-                            contact,
-                          ),
-                      contentPadding:
-                      const EdgeInsets.symmetric(
-                        horizontal:
-                        14,
-                        vertical:
-                        8,
-                      ),
-                      leading:
-                      ProfileAvatar(
-                        name:
-                        name,
-                        radius:
-                        28,
-                        showOnlineStatus:
-                        false,
-                      ),
-                      title:
-                      Text(
-                        name,
-                        style:
-                        const TextStyle(
-                          fontWeight:
-                          FontWeight.bold,
-                        ),
-                      ),
-                      subtitle:
-                      Column(
-                        crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            email,
-                          ),
-                          if (hasNimo)
-                            const Text(
-                              'On NIMO',
-                              style:
-                              TextStyle(
-                                color:
-                                primary,
-                                fontSize:
-                                12,
-                                fontWeight:
-                                FontWeight.w600,
-                              ),
-                            ),
-                        ],
-                      ),
-                      trailing:
-                      PopupMenuButton<
-                          String>(
-                        onSelected:
-                            (
-                            value,
-                            ) {
-                          switch (
-                          value) {
-                            case 'edit':
-                              editContact(
-                                contact,
-                              );
-                              break;
-                            case 'share':
-                              shareContact(
-                                email,
-                              );
-                              break;
-                            case 'block':
-                              blockUser(
-                                contact,
-                              );
-                              break;
-                            case 'delete':
-                              deleteContact(
-                                contact['id']
-                                    .toString(),
-                              );
-                              break;
-                          }
-                        },
-                        itemBuilder:
-                            (
-                            context,
-                            ) =>
-                        [
-                          const PopupMenuItem(
-                            value:
-                            'edit',
-                            child:
-                            Text(
-                              'Edit Name',
-                            ),
-                          ),
-                          const PopupMenuItem(
-                            value:
-                            'share',
-                            child:
-                            Text(
-                              'Share Contact',
-                            ),
-                          ),
-                          if (hasNimo)
-                            const PopupMenuItem(
-                              value:
-                              'block',
-                              child:
-                              Text(
-                                'Block User',
-                              ),
-                            ),
-                          const PopupMenuItem(
-                            value:
-                            'delete',
-                            child:
-                            Text(
-                              'Delete Contact',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
+          _buildSearchBar(),
+          const SizedBox(height: 20),
+          ...filteredUsers.map(_buildContactTile),
         ],
       ),
     );
   }
 
+  // ===============================================================
+  // UI
+  // ===============================================================
   @override
-  void dispose() {
-    searchController.dispose();
-    nameController.dispose();
-    emailController.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: background,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        foregroundColor: Colors.black,
+        title: const Text(
+          'Contacts',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+      body: SafeArea(
+        child: _buildBody(),
+      ),
+    );
   }
 }

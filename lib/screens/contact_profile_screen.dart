@@ -23,10 +23,7 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
 
   Map<String, dynamic>? profile;
   bool loading = true;
-
-  // ==========================================================
-  // INIT
-  // ==========================================================
+  bool callLoading = false;
 
   @override
   void initState() {
@@ -37,7 +34,6 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
   // ==========================================================
   // LOAD PROFILE
   // ==========================================================
-
   Future<void> loadProfile() async {
     try {
       final data = await client
@@ -49,9 +45,7 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
       if (!mounted) return;
 
       setState(() {
-        profile = data == null
-            ? null
-            : Map<String, dynamic>.from(data);
+        profile = data == null ? null : Map<String, dynamic>.from(data);
         loading = false;
       });
     } catch (e) {
@@ -66,89 +60,143 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
   }
 
   // ==========================================================
-  // GETTERS
+  // PROFILE DATA
   // ==========================================================
-
   String get name {
-    final value = profile?['name']?.toString().trim();
-    if (value == null || value.isEmpty) {
-      return 'User';
+    final fullName = profile?['full_name']?.toString().trim();
+    if (fullName != null && fullName.isNotEmpty) {
+      return fullName;
     }
-    return value;
+
+    final displayName = profile?['display_name']?.toString().trim();
+    if (displayName != null && displayName.isNotEmpty) {
+      return displayName;
+    }
+
+    final fallbackName = profile?['name']?.toString().trim();
+    if (fallbackName != null && fallbackName.isNotEmpty) {
+      return fallbackName;
+    }
+
+    final userEmail = profile?['email']?.toString().trim();
+    if (userEmail != null && userEmail.isNotEmpty) {
+      return userEmail.split('@').first;
+    }
+
+    return 'User';
   }
 
-  String get email {
-    return profile?['email']?.toString() ?? '';
-  }
+  String get email => profile?['email']?.toString() ?? '';
 
   String get description {
-    final value = profile?['description']?.toString().trim();
-    if (value == null || value.isEmpty) {
-      return 'Hey there! I am using NIMO.';
-    }
-    return value;
+    final bio = profile?['description']?.toString().trim();
+    if (bio != null && bio.isNotEmpty) return bio;
+
+    final about = profile?['about']?.toString().trim();
+    if (about != null && about.isNotEmpty) return about;
+
+    return 'Hey there! I am using NIMO.';
   }
 
   String? get avatarUrl {
     final value = profile?['avatar_url']?.toString().trim();
-    if (value == null || value.isEmpty) {
-      return null;
-    }
+    if (value == null || value.isEmpty) return null;
     return value;
   }
 
-  bool get isOnline {
-    return profile?['is_online'] == true;
-  }
+  bool get isOnline => profile?['is_online'] == true;
 
   // ==========================================================
   // CALL METHODS
-  // IMPORTANT:
-  // zego_call_service.dart uses:
-  // required String targetUserID
-  // (capital D)
   // ==========================================================
+  Future<void> _startVoiceCall() async {
+    await _startCall(isVideo: false);
+  }
 
-  Future<void> startVoiceCall() async {
+  Future<void> _startVideoCall() async {
+    await _startCall(isVideo: true);
+  }
+
+  Future<void> _startCall({
+    required bool isVideo,
+  }) async {
+    if (callLoading) return;
+
+    if (profile == null) {
+      _showError('Profile not loaded.');
+      return;
+    }
+
+    if (widget.userId.isEmpty) {
+      _showError('Invalid user ID.');
+      return;
+    }
+
+    // Prevent calling yourself
+    final currentUser = client.auth.currentUser;
+    if (currentUser != null && currentUser.id == widget.userId) {
+      _showError('You cannot call yourself.');
+      return;
+    }
+
     try {
-      ZegoCallService.startVoiceCall(
-        targetUserID: widget.userId,
-        targetUserName: name,
-      );
-    } catch (e) {
+      setState(() {
+        callLoading = true;
+      });
+
+      if (isVideo) {
+        await ZegoCallService.startVideoCall(
+          targetUserID: widget.userId,
+          targetUserName: name,
+        );
+      } else {
+        await ZegoCallService.startVoiceCall(
+          targetUserID: widget.userId,
+          targetUserName: name,
+        );
+      }
+
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Unable to start voice call: $e'),
-          backgroundColor: Colors.red,
+          content: Text(
+            isVideo
+                ? 'Starting video call with $name...'
+                : 'Starting voice call with $name...',
+          ),
+          backgroundColor: Colors.green,
         ),
       );
+    } catch (e) {
+      _showError(
+        isVideo
+            ? 'Unable to start video call: $e'
+            : 'Unable to start voice call: $e',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          callLoading = false;
+        });
+      }
     }
   }
 
-  Future<void> startVideoCall() async {
-    try {
-      ZegoCallService.startVideoCall(
-        targetUserID: widget.userId,
-        targetUserName: name,
-      );
-    } catch (e) {
-      if (!mounted) return;
+  void _showError(String message) {
+    if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Unable to start video call: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 
   // ==========================================================
   // NOT FOUND
   // ==========================================================
-
   Widget buildNotFound() {
     return Center(
       child: Padding(
@@ -186,11 +234,10 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
   // ==========================================================
   // CALL BUTTON
   // ==========================================================
-
   Widget buildCallButton({
     required IconData icon,
     required String label,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
   }) {
     return Expanded(
       child: InkWell(
@@ -208,7 +255,7 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: primary.withAlpha(60),
+                color: primary.withValues(alpha: 0.25),
                 blurRadius: 12,
                 offset: const Offset(0, 6),
               ),
@@ -217,14 +264,24 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                icon,
-                color: Colors.white,
-                size: 22,
-              ),
+              if (callLoading)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              else
+                Icon(
+                  icon,
+                  color: Colors.white,
+                  size: 22,
+                ),
               const SizedBox(width: 8),
               Text(
-                label,
+                callLoading ? 'Calling...' : label,
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -241,7 +298,6 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
   // ==========================================================
   // BUILD
   // ==========================================================
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -278,7 +334,6 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
             children: [
               const SizedBox(height: 30),
 
-              // AVATAR
               ProfileAvatar(
                 name: name,
                 imageUrl: avatarUrl,
@@ -289,7 +344,6 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
 
               const SizedBox(height: 20),
 
-              // NAME
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Text(
@@ -305,7 +359,6 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
 
               const SizedBox(height: 8),
 
-              // EMAIL
               if (email.isNotEmpty)
                 Padding(
                   padding:
@@ -322,7 +375,6 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
 
               const SizedBox(height: 12),
 
-              // ONLINE STATUS
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
@@ -330,8 +382,8 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
                 ),
                 decoration: BoxDecoration(
                   color: isOnline
-                      ? Colors.green.withAlpha(25)
-                      : Colors.grey.withAlpha(25),
+                      ? Colors.green.withValues(alpha: 0.10)
+                      : Colors.grey.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
@@ -347,7 +399,6 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
 
               const SizedBox(height: 28),
 
-              // CALL BUTTONS
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Row(
@@ -355,13 +406,13 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
                     buildCallButton(
                       icon: Icons.call,
                       label: 'Voice Call',
-                      onTap: startVoiceCall,
+                      onTap: callLoading ? null : _startVoiceCall,
                     ),
                     const SizedBox(width: 12),
                     buildCallButton(
                       icon: Icons.videocam,
                       label: 'Video Call',
-                      onTap: startVideoCall,
+                      onTap: callLoading ? null : _startVideoCall,
                     ),
                   ],
                 ),
@@ -369,7 +420,6 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
 
               const SizedBox(height: 24),
 
-              // ABOUT CARD
               Container(
                 width: double.infinity,
                 margin:
@@ -380,7 +430,7 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withAlpha(8),
+                      color: Colors.black.withValues(alpha: 0.03),
                       blurRadius: 12,
                       offset: const Offset(0, 4),
                     ),

@@ -4,10 +4,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/message_model.dart';
 import '../services/supabase_chat_service.dart';
 import '../services/supabase_storage_service.dart';
+import '../services/zego_call_service.dart';
 import '../widgets/chat_input_widget.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/profile_avatarz.dart';
@@ -37,12 +39,61 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   bool _isSending = false;
 
   // =========================================================
+  // CURRENT USER INFO
+  // =========================================================
+  String get _myUserId {
+    return Supabase.instance.client.auth.currentUser?.id ?? '';
+  }
+
+  String get _myUserName {
+    final user = Supabase.instance.client.auth.currentUser;
+
+    if (user == null) {
+      return 'NIMO User';
+    }
+
+    final metadata = user.userMetadata ?? {};
+
+    final name =
+        metadata['full_name'] ??
+            metadata['display_name'] ??
+            metadata['name'] ??
+            metadata['username'] ??
+            user.email?.split('@').first ??
+            'NIMO User';
+
+    return name.toString();
+  }
+
+  // =========================================================
+  // INIT STATE
+  // =========================================================
+  @override
+  void initState() {
+    super.initState();
+
+    SupabaseChatService.markAsSeen(widget.otherUserId);
+  }
+
+  // =========================================================
+  // DISPOSE
+  // =========================================================
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  // =========================================================
   // SEND TEXT MESSAGE
   // =========================================================
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
 
-    if (text.isEmpty || _isSending) return;
+    if (text.isEmpty || _isSending) {
+      return;
+    }
 
     _controller.clear();
 
@@ -71,7 +122,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         imageQuality: 80,
       );
 
-      if (image == null) return;
+      if (image == null) {
+        return;
+      }
 
       if (mounted) {
         setState(() => _isSending = true);
@@ -111,7 +164,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         source: ImageSource.gallery,
       );
 
-      if (video == null) return;
+      if (video == null) {
+        return;
+      }
 
       if (mounted) {
         setState(() => _isSending = true);
@@ -147,12 +202,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     try {
       final result = await FilePicker.platform.pickFiles();
 
-      if (result == null || result.files.isEmpty) return;
+      if (result == null || result.files.isEmpty) {
+        return;
+      }
 
       final pickedFile = result.files.single;
-
       final filePath = pickedFile.path;
-      if (filePath == null || filePath.trim().isEmpty) return;
+
+      if (filePath == null || filePath.trim().isEmpty) {
+        return;
+      }
 
       final fileName = pickedFile.name;
 
@@ -185,14 +244,62 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   // =========================================================
-  // VOICE PLACEHOLDER
+  // VOICE RECORDING PLACEHOLDER
   // =========================================================
   void _showVoicePlaceholder() {
     _showError('Voice recording support coming soon.');
   }
 
   // =========================================================
-  // FORMAT DATE & TIME
+  // ENSURE ZEGO INITIALIZED
+  // =========================================================
+  Future<void> _ensureZegoInitialized() async {
+    if (_myUserId.isEmpty) {
+      throw Exception('User not logged in');
+    }
+
+    if (!ZegoCallService.isInitialized) {
+      await ZegoCallService.init(
+        userID: _myUserId,
+        userName: _myUserName,
+      );
+    }
+  }
+
+  // =========================================================
+  // START VOICE CALL
+  // =========================================================
+  Future<void> _startVoiceCall() async {
+    try {
+      await _ensureZegoInitialized();
+
+      await ZegoCallService.startVoiceCall(
+        targetUserID: widget.otherUserId,
+        targetUserName: widget.otherUserName,
+      );
+    } catch (e) {
+      _showError('Voice call failed: $e');
+    }
+  }
+
+  // =========================================================
+  // START VIDEO CALL
+  // =========================================================
+  Future<void> _startVideoCall() async {
+    try {
+      await _ensureZegoInitialized();
+
+      await ZegoCallService.startVideoCall(
+        targetUserID: widget.otherUserId,
+        targetUserName: widget.otherUserName,
+      );
+    } catch (e) {
+      _showError('Video call failed: $e');
+    }
+  }
+
+  // =========================================================
+  // FORMAT DATE/TIME
   // =========================================================
   String _formatDateTime(DateTime dateTime) {
     return DateFormat('d MMM, h:mm a').format(dateTime.toLocal());
@@ -209,8 +316,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // BUILD MESSAGE BUBBLE
   // =========================================================
   Widget _buildMessageBubble(Message message) {
-    final isMe = message.senderId == SupabaseChatService.myId;
-
+    final isMe = message.senderId == _myUserId;
     final mediaUrl = message.mediaUrl ?? '';
 
     final displayMessage = message.type == MessageType.text
@@ -235,8 +341,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (!_scrollController.hasClients) return;
+      if (!mounted) {
+        return;
+      }
+
+      if (!_scrollController.hasClients) {
+        return;
+      }
 
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
@@ -250,7 +361,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // SHOW ERROR
   // =========================================================
   void _showError(String text) {
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -258,26 +371,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         behavior: SnackBarBehavior.floating,
       ),
     );
-  }
-
-  // =========================================================
-  // INIT
-  // =========================================================
-  @override
-  void initState() {
-    super.initState();
-
-    SupabaseChatService.markAsSeen(widget.otherUserId);
-  }
-
-  // =========================================================
-  // DISPOSE
-  // =========================================================
-  @override
-  void dispose() {
-    _controller.dispose();
-    _scrollController.dispose();
-    super.dispose();
   }
 
   // =========================================================
@@ -330,11 +423,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         ),
         actions: [
           IconButton(
-            onPressed: () {},
+            onPressed: _startVoiceCall,
             icon: const Icon(Icons.call),
           ),
           IconButton(
-            onPressed: () {},
+            onPressed: _startVideoCall,
             icon: const Icon(Icons.videocam),
           ),
         ],
@@ -378,7 +471,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               },
             ),
           ),
-
           ChatInputWidget(
             controller: _controller,
             isSending: _isSending,
@@ -388,7 +480,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             onVideo: _sendVideo,
             onVoice: _showVoicePlaceholder,
             onTyping: (text) {
-              // Typing indicator can be added here later.
+              // Typing indicator can be implemented later.
             },
           ),
         ],
