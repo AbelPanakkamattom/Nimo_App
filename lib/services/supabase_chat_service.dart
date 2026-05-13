@@ -26,6 +26,18 @@ class SupabaseChatService {
 
   // =========================================================
   // SEND MESSAGE
+  // Supports:
+  // - text
+  // - image
+  // - video
+  // - file
+  // - audio
+  // - call
+  // - video_call
+  //
+  // For call/video_call:
+  // - call_status defaults to "completed"
+  // - call_duration defaults to 0
   // =========================================================
 
   static Future<void> sendMessage({
@@ -37,6 +49,10 @@ class SupabaseChatService {
     String? fileName,
     int? fileSize,
     String? mimeType,
+
+    // Call fields
+    String? callStatus,
+    int? callDuration,
   }) async {
     _ensureLoggedIn();
 
@@ -47,44 +63,49 @@ class SupabaseChatService {
       throw Exception('Receiver ID is empty.');
     }
 
-    final hasText = text.isNotEmpty;
-    final hasMedia =
-        mediaUrl != null && mediaUrl.trim().isNotEmpty;
-
-    if (!hasText && !hasMedia) {
-      throw Exception('Message is empty.');
-    }
-
-    // Check if receiver is blocked by current user
+    // Check if receiver is blocked
     final blocked = await isBlocked(receiver);
     if (blocked) {
       throw Exception('You have blocked this user.');
     }
 
+    final hasText = text.isNotEmpty;
+    final hasMedia = mediaUrl != null && mediaUrl.trim().isNotEmpty;
+    final isCallMessage = type == 'call' || type == 'video_call';
+
+    // Normal messages require either text or media.
+    // Call messages are allowed even if content is empty.
+    if (!hasText && !hasMedia && !isCallMessage) {
+      throw Exception('Message is empty.');
+    }
+
+    // Build payload
     final payload = <String, dynamic>{
       'sender_id': myId,
       'receiver_id': receiver,
       'content': hasText ? text : '',
       'type': type,
+      'message_type': type, // supports both schemas
       'status': MessageStatus.sent.name,
       'deleted': false,
       'is_seen': false,
-      'created_at':
-      DateTime.now().toUtc().toIso8601String(),
+      'created_at': DateTime.now().toUtc().toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
     };
 
-    if (replyToMessageId != null &&
-        replyToMessageId.trim().isNotEmpty) {
+    // Reply
+    if (replyToMessageId != null && replyToMessageId.trim().isNotEmpty) {
       payload['reply_to'] = replyToMessageId.trim();
     }
 
+    // Media
     if (hasMedia) {
       payload['media_url'] = mediaUrl.trim();
       payload['file_url'] = mediaUrl.trim();
     }
 
-    if (fileName != null &&
-        fileName.trim().isNotEmpty) {
+    // File information
+    if (fileName != null && fileName.trim().isNotEmpty) {
       payload['file_name'] = fileName.trim();
     }
 
@@ -92,9 +113,29 @@ class SupabaseChatService {
       payload['file_size'] = fileSize;
     }
 
-    if (mimeType != null &&
-        mimeType.trim().isNotEmpty) {
+    if (mimeType != null && mimeType.trim().isNotEmpty) {
       payload['mime_type'] = mimeType.trim();
+    }
+
+    // =========================================================
+    // CALL SUPPORT
+    // =========================================================
+
+    if (isCallMessage) {
+      payload['call_status'] =
+      (callStatus != null && callStatus.trim().isNotEmpty)
+          ? callStatus.trim()
+          : 'completed';
+
+      payload['call_duration'] = callDuration ?? 0;
+    } else {
+      if (callStatus != null && callStatus.trim().isNotEmpty) {
+        payload['call_status'] = callStatus.trim();
+      }
+
+      if (callDuration != null) {
+        payload['call_duration'] = callDuration;
+      }
     }
 
     try {
@@ -112,11 +153,8 @@ class SupabaseChatService {
   // CHAT STREAM
   // =========================================================
 
-  static Stream<List<Message>> getChat(
-      String otherUserId,
-      ) {
-    if (!isLoggedIn ||
-        otherUserId.trim().isEmpty) {
+  static Stream<List<Message>> getChat(String otherUserId) {
+    if (!isLoggedIn || otherUserId.trim().isEmpty) {
       return Stream.value(<Message>[]);
     }
 
@@ -128,15 +166,11 @@ class SupabaseChatService {
       try {
         final messages = rows
             .where((row) {
-          final sender =
-              row['sender_id']?.toString() ?? '';
-          final receiver =
-              row['receiver_id']?.toString() ?? '';
+          final sender = row['sender_id']?.toString() ?? '';
+          final receiver = row['receiver_id']?.toString() ?? '';
 
-          return (sender == myId &&
-              receiver == otherUserId) ||
-              (sender == otherUserId &&
-                  receiver == myId);
+          return (sender == myId && receiver == otherUserId) ||
+              (sender == otherUserId && receiver == myId);
         })
             .map(
               (row) => Message.fromJson(
@@ -146,18 +180,11 @@ class SupabaseChatService {
             .toList();
 
         messages.sort(
-              (a, b) =>
-              a.createdAt.compareTo(b.createdAt),
+              (a, b) => a.createdAt.compareTo(b.createdAt),
         );
 
-        _autoMarkDelivered(
-          messages,
-          otherUserId,
-        );
-        _autoMarkSeen(
-          messages,
-          otherUserId,
-        );
+        _autoMarkDelivered(messages, otherUserId);
+        _autoMarkSeen(messages, otherUserId);
 
         return messages;
       } catch (e) {
@@ -171,28 +198,21 @@ class SupabaseChatService {
   // MARK AS DELIVERED
   // =========================================================
 
-  static Future<void> markAsDelivered(
-      String otherUserId,
-      ) async {
+  static Future<void> markAsDelivered(String otherUserId) async {
     if (!isLoggedIn) return;
 
     try {
       await _client
           .from('messages')
           .update({
-        'status':
-        MessageStatus.delivered.name,
+        'status': MessageStatus.delivered.name,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       })
           .eq('sender_id', otherUserId)
           .eq('receiver_id', myId)
-          .eq(
-        'status',
-        MessageStatus.sent.name,
-      );
+          .eq('status', MessageStatus.sent.name);
     } catch (e) {
-      debugPrint(
-        'MARK DELIVERED ERROR: $e',
-      );
+      debugPrint('MARK DELIVERED ERROR: $e');
     }
   }
 
@@ -200,9 +220,7 @@ class SupabaseChatService {
   // MARK AS SEEN
   // =========================================================
 
-  static Future<void> markAsSeen(
-      String otherUserId,
-      ) async {
+  static Future<void> markAsSeen(String otherUserId) async {
     if (!isLoggedIn) return;
 
     try {
@@ -211,13 +229,12 @@ class SupabaseChatService {
           .update({
         'status': MessageStatus.seen.name,
         'is_seen': true,
+        'seen_at': DateTime.now().toUtc().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       })
           .eq('sender_id', otherUserId)
           .eq('receiver_id', myId)
-          .neq(
-        'status',
-        MessageStatus.seen.name,
-      );
+          .neq('status', MessageStatus.seen.name);
     } catch (e) {
       debugPrint('MARK SEEN ERROR: $e');
     }
@@ -229,11 +246,9 @@ class SupabaseChatService {
       ) {
     final hasPending = messages.any(
           (message) =>
-      message.senderId ==
-          otherUserId &&
+      message.senderId == otherUserId &&
           message.receiverId == myId &&
-          message.status ==
-              MessageStatus.sent,
+          message.status == MessageStatus.sent,
     );
 
     if (hasPending) {
@@ -247,11 +262,9 @@ class SupabaseChatService {
       ) {
     final hasUnseen = messages.any(
           (message) =>
-      message.senderId ==
-          otherUserId &&
+      message.senderId == otherUserId &&
           message.receiverId == myId &&
-          message.status !=
-              MessageStatus.seen,
+          message.status != MessageStatus.seen,
     );
 
     if (hasUnseen) {
@@ -263,37 +276,26 @@ class SupabaseChatService {
   // DELETE MESSAGE
   // =========================================================
 
-  static Future<void> deleteMessage(
-      String messageId,
-      ) async {
+  static Future<void> deleteMessage(String messageId) async {
     try {
-      await _client
-          .from('messages')
-          .delete()
-          .eq('id', messageId);
+      await _client.from('messages').delete().eq('id', messageId);
     } catch (_) {
-      throw Exception(
-        'Failed to delete message.',
-      );
+      throw Exception('Failed to delete message.');
     }
   }
 
-  static Future<void> deleteForEveryone(
-      String messageId,
-      ) async {
+  static Future<void> deleteForEveryone(String messageId) async {
     try {
       await _client
           .from('messages')
           .update({
-        'content':
-        '🚫 This message was deleted',
+        'content': '🚫 This message was deleted',
         'deleted': true,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       })
           .eq('id', messageId);
     } catch (e) {
-      debugPrint(
-        'DELETE FOR EVERYONE ERROR: $e',
-      );
+      debugPrint('DELETE FOR EVERYONE ERROR: $e');
     }
   }
 
@@ -305,52 +307,36 @@ class SupabaseChatService {
     required String receiverId,
     required bool isTyping,
   }) async {
-    if (!isLoggedIn ||
-        receiverId.trim().isEmpty) {
+    if (!isLoggedIn || receiverId.trim().isEmpty) {
       return;
     }
 
     try {
-      await _client
-          .from('typing_status')
-          .upsert({
+      await _client.from('typing_status').upsert({
         'user_id': myId,
         'receiver_id': receiverId,
         'is_typing': isTyping,
-        'updated_at': DateTime.now()
-            .toUtc()
-            .toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
     } catch (e) {
-      debugPrint(
-        'SET TYPING ERROR: $e',
-      );
+      debugPrint('SET TYPING ERROR: $e');
     }
   }
 
-  static Stream<bool> typingStream(
-      String otherUserId,
-      ) {
+  static Stream<bool> typingStream(String otherUserId) {
     if (!isLoggedIn) {
       return Stream.value(false);
     }
 
     return _client
         .from('typing_status')
-        .stream(
-      primaryKey: [
-        'user_id',
-        'receiver_id',
-      ],
-    )
+        .stream(primaryKey: ['user_id', 'receiver_id'])
         .map((rows) {
       try {
         final row = rows.firstWhere(
               (item) =>
-          item['user_id'] ==
-              otherUserId &&
-              item['receiver_id'] ==
-                  myId,
+          item['user_id'] == otherUserId &&
+              item['receiver_id'] == myId,
         );
 
         return row['is_typing'] == true;
@@ -364,9 +350,7 @@ class SupabaseChatService {
   // ONLINE STATUS
   // =========================================================
 
-  static Future<void> setOnlineStatus(
-      bool online,
-      ) async {
+  static Future<void> setOnlineStatus(bool online) async {
     if (!isLoggedIn) return;
 
     try {
@@ -374,20 +358,15 @@ class SupabaseChatService {
           .from('profiles')
           .update({
         'is_online': online,
-        'last_seen': DateTime.now()
-            .toUtc()
-            .toIso8601String(),
+        'last_seen': DateTime.now().toUtc().toIso8601String(),
       })
           .eq('id', myId);
     } catch (e) {
-      debugPrint(
-        'ONLINE STATUS ERROR: $e',
-      );
+      debugPrint('ONLINE STATUS ERROR: $e');
     }
   }
 
-  static Stream<Map<String, dynamic>>
-  userStatusStream(String userId) {
+  static Stream<Map<String, dynamic>> userStatusStream(String userId) {
     return _client
         .from('profiles')
         .stream(primaryKey: ['id'])
@@ -403,8 +382,7 @@ class SupabaseChatService {
       final profile = rows.first;
 
       return {
-        'online':
-        profile['is_online'] == true,
+        'online': profile['is_online'] == true,
         'last_seen': profile['last_seen'],
       };
     });
@@ -414,9 +392,7 @@ class SupabaseChatService {
   // UNREAD COUNT
   // =========================================================
 
-  static Stream<int> unreadCountStream(
-      String otherUserId,
-      ) {
+  static Stream<int> unreadCountStream(String otherUserId) {
     if (!isLoggedIn) {
       return Stream.value(0);
     }
@@ -426,11 +402,9 @@ class SupabaseChatService {
         .stream(primaryKey: ['id'])
         .map((rows) {
       return rows.where((row) {
-        return row['sender_id'] ==
-            otherUserId &&
+        return row['sender_id'] == otherUserId &&
             row['receiver_id'] == myId &&
-            row['status'] !=
-                MessageStatus.seen.name;
+            row['status'] != MessageStatus.seen.name;
       }).length;
     });
   }
@@ -442,22 +416,17 @@ class SupabaseChatService {
   static Future<void> blockUser({
     required String blockedId,
   }) async {
-    if (!isLoggedIn ||
-        blockedId.trim().isEmpty) {
+    if (!isLoggedIn || blockedId.trim().isEmpty) {
       return;
     }
 
     try {
-      await _client
-          .from('blocked_users')
-          .upsert({
+      await _client.from('blocked_users').upsert({
         'blocker_id': myId,
         'blocked_id': blockedId,
       });
     } catch (e) {
-      debugPrint(
-        'BLOCK USER ERROR: $e',
-      );
+      debugPrint('BLOCK USER ERROR: $e');
     }
   }
 
@@ -465,26 +434,18 @@ class SupabaseChatService {
   // UNBLOCK USER
   // =========================================================
 
-  static Future<void> unblockUser(
-      String blockedId,
-      ) async {
-    if (!isLoggedIn ||
-        blockedId.trim().isEmpty) {
+  static Future<void> unblockUser(String blockedId) async {
+    if (!isLoggedIn || blockedId.trim().isEmpty) {
       return;
     }
 
     try {
-      await _client
-          .from('blocked_users')
-          .delete()
-          .match({
+      await _client.from('blocked_users').delete().match({
         'blocker_id': myId,
         'blocked_id': blockedId,
       });
     } catch (e) {
-      debugPrint(
-        'UNBLOCK USER ERROR: $e',
-      );
+      debugPrint('UNBLOCK USER ERROR: $e');
     }
   }
 
@@ -492,11 +453,8 @@ class SupabaseChatService {
   // CHECK IF BLOCKED
   // =========================================================
 
-  static Future<bool> isBlocked(
-      String otherUserId,
-      ) async {
-    if (!isLoggedIn ||
-        otherUserId.trim().isEmpty) {
+  static Future<bool> isBlocked(String otherUserId) async {
+    if (!isLoggedIn || otherUserId.trim().isEmpty) {
       return false;
     }
 
@@ -505,10 +463,7 @@ class SupabaseChatService {
           .from('blocked_users')
           .select()
           .eq('blocker_id', myId)
-          .eq(
-        'blocked_id',
-        otherUserId,
-      )
+          .eq('blocked_id', otherUserId)
           .maybeSingle();
 
       return result != null;

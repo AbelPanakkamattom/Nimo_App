@@ -7,12 +7,21 @@ class MessageBubble extends StatelessWidget {
   final String time;
   final bool isMe;
 
+  // Media flags
   final bool isImage;
   final bool isAudio;
   final bool isDocument;
   final bool isVideo;
 
+  // Call flags
+  final bool isCall;
+  final bool isVideoCall;
+  final bool isMissedCall;
+
+  // Delivery status
   final String status;
+
+  // Optional file name for documents
   final String? fileName;
 
   const MessageBubble({
@@ -24,29 +33,27 @@ class MessageBubble extends StatelessWidget {
     this.isAudio = false,
     this.isDocument = false,
     this.isVideo = false,
+    this.isCall = false,
+    this.isVideoCall = false,
+    this.isMissedCall = false,
     this.status = 'sent',
     this.fileName,
   });
 
+  static const Color primary = Color(0xFF6C5CE7);
+
   @override
   Widget build(BuildContext context) {
-    final bubbleColor = isMe
-        ? const Color(0xFF6C5CE7)
-        : Colors.white;
-
-    final textColor = isMe
-        ? Colors.white
-        : Colors.black87;
+    final bubbleColor = isMe ? primary : Colors.white;
+    final textColor = isMe ? Colors.white : Colors.black87;
 
     return Align(
-      alignment:
-      isMe ? Alignment.centerRight : Alignment.centerLeft,
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 6),
         padding: const EdgeInsets.all(12),
         constraints: BoxConstraints(
-          maxWidth:
-          MediaQuery.of(context).size.width * 0.75,
+          maxWidth: MediaQuery.of(context).size.width * 0.75,
         ),
         decoration: BoxDecoration(
           color: bubbleColor,
@@ -60,14 +67,11 @@ class MessageBubble extends StatelessWidget {
           ],
         ),
         child: Column(
-          crossAxisAlignment:
-          CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             _buildContent(textColor),
-
             const SizedBox(height: 8),
-
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -75,9 +79,7 @@ class MessageBubble extends StatelessWidget {
                   time,
                   style: TextStyle(
                     fontSize: 11,
-                    color: isMe
-                        ? Colors.white70
-                        : Colors.grey,
+                    color: isMe ? Colors.white70 : Colors.grey,
                   ),
                 ),
                 if (isMe) ...[
@@ -97,7 +99,31 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildContent(Color textColor) {
-    // Image
+    // =====================================================
+    // CALL MESSAGE (VOICE CALL)
+    // =====================================================
+    if (isCall) {
+      return _buildCallTile(
+        icon: Icons.call,
+        textColor: textColor,
+        isVideo: false,
+      );
+    }
+
+    // =====================================================
+    // CALL MESSAGE (VIDEO CALL)
+    // =====================================================
+    if (isVideoCall) {
+      return _buildCallTile(
+        icon: Icons.videocam,
+        textColor: textColor,
+        isVideo: true,
+      );
+    }
+
+    // =====================================================
+    // IMAGE
+    // =====================================================
     if (isImage) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(16),
@@ -118,16 +144,16 @@ class MessageBubble extends StatelessWidget {
       );
     }
 
-    // Document
+    // =====================================================
+    // DOCUMENT
+    // =====================================================
     if (isDocument) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             Icons.insert_drive_file,
-            color: isMe
-                ? Colors.white
-                : Colors.grey.shade700,
+            color: isMe ? Colors.white : Colors.grey.shade700,
             size: 28,
           ),
           const SizedBox(width: 8),
@@ -145,20 +171,20 @@ class MessageBubble extends StatelessWidget {
       );
     }
 
-    // Audio
+    // =====================================================
+    // AUDIO
+    // =====================================================
     if (isAudio) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             Icons.play_arrow,
-            color: isMe
-                ? Colors.white
-                : Colors.grey.shade700,
+            color: isMe ? Colors.white : Colors.grey.shade700,
           ),
           const SizedBox(width: 8),
           Text(
-            '00:00',
+            'Voice Message',
             style: TextStyle(
               color: textColor,
               fontWeight: FontWeight.w500,
@@ -168,16 +194,16 @@ class MessageBubble extends StatelessWidget {
       );
     }
 
-    // Video
+    // =====================================================
+    // VIDEO FILE
+    // =====================================================
     if (isVideo) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             Icons.videocam,
-            color: isMe
-                ? Colors.white
-                : Colors.grey.shade700,
+            color: isMe ? Colors.white : Colors.grey.shade700,
           ),
           const SizedBox(width: 8),
           Text(
@@ -191,13 +217,67 @@ class MessageBubble extends StatelessWidget {
       );
     }
 
-    // Text
+    // =====================================================
+    // TEXT MESSAGE
+    // =====================================================
     return Text(
       message,
       style: TextStyle(
         color: textColor,
         fontSize: 16,
       ),
+    );
+  }
+
+  Widget _buildCallTile({
+    required IconData icon,
+    required Color textColor,
+    required bool isVideo,
+  }) {
+    final bool incoming = !isMe;
+
+    String title;
+    if (message.trim().isNotEmpty) {
+      title = message;
+    } else {
+      if (isMissedCall) {
+        title = incoming
+            ? (isVideo ? 'Missed video call' : 'Missed voice call')
+            : (isVideo ? 'Video call not answered' : 'Voice call not answered');
+      } else {
+        title = incoming
+            ? (isVideo ? 'Incoming video call' : 'Incoming voice call')
+            : (isVideo ? 'You started a video call' : 'You started a voice call');
+      }
+    }
+
+    Color iconColor;
+    if (isMissedCall) {
+      iconColor = isMe ? Colors.orangeAccent : Colors.redAccent;
+    } else {
+      iconColor = isMe ? Colors.white : primary;
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          icon,
+          color: iconColor,
+          size: 22,
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            title,
+            style: TextStyle(
+              color: textColor,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../widgets/profile_avatarz.dart';
+
 import 'archived_chats_screen.dart';
 import 'auth_screen.dart';
 import 'chat_detail_screen.dart';
-import 'contacts_screen.dart';
 import 'contact_profile_screen.dart';
+import 'contacts_screen.dart';
 import 'settings_screen.dart';
 import 'starred_messages_screen.dart';
 
@@ -14,21 +15,27 @@ class ChatsScreen extends StatefulWidget {
   const ChatsScreen({super.key});
 
   @override
-  State<ChatsScreen> createState() => _ChatsScreenState();
+  State<ChatsScreen> createState() =>
+      _ChatsScreenState();
 }
 
-class _ChatsScreenState extends State<ChatsScreen> {
-  static const Color primary = Color(0xFF6C5CE7);
+class _ChatsScreenState
+    extends State<ChatsScreen> {
+  static const Color primary =
+  Color(0xFF6C5CE7);
 
-  final SupabaseClient client = Supabase.instance.client;
+  final SupabaseClient client =
+      Supabase.instance.client;
 
-  final TextEditingController searchController =
+  final TextEditingController
+  searchController =
   TextEditingController();
 
   String search = '';
 
   final Set<String> mutedChats = {};
-  final Set<String> archivedChats = {};
+  final Set<String> archivedChats =
+  {};
 
   String get myId =>
       client.auth.currentUser?.id ?? '';
@@ -37,7 +44,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
   // GET CHATS
   // =========================================================
 
-  Stream<List<Map<String, dynamic>>> getChats() {
+  Stream<List<Map<String, dynamic>>>
+  getChats() {
     if (myId.isEmpty) {
       return Stream.value([]);
     }
@@ -45,40 +53,43 @@ class _ChatsScreenState extends State<ChatsScreen> {
     return client
         .from('messages')
         .stream(primaryKey: ['id'])
+        .order(
+      'created_at',
+      ascending: false,
+    )
         .map((rows) {
-      final filtered = rows.where((msg) {
-        return msg['sender_id'] == myId ||
-            msg['receiver_id'] == myId;
+      final filtered = rows.where((
+          msg,
+          ) {
+        return msg['sender_id'] ==
+            myId ||
+            msg['receiver_id'] ==
+                myId;
       }).toList();
 
-      filtered.sort((a, b) {
-        final bDate = DateTime.tryParse(
-          b['created_at'].toString(),
-        ) ??
-            DateTime(2000);
-
-        final aDate = DateTime.tryParse(
-          a['created_at'].toString(),
-        ) ??
-            DateTime(2000);
-
-        return bDate.compareTo(aDate);
-      });
-
-      final Map<String, Map<String, dynamic>>
-      latestByUser = {};
+      final Map<
+          String,
+          Map<String, dynamic>>
+      latestChats = {};
 
       for (final msg in filtered) {
-        final otherId = msg['sender_id'] == myId
-            ? msg['receiver_id'].toString()
-            : msg['sender_id'].toString();
+        final otherId =
+        msg['sender_id'] ==
+            myId
+            ? msg['receiver_id']
+            .toString()
+            : msg['sender_id']
+            .toString();
 
-        if (!latestByUser.containsKey(otherId)) {
-          latestByUser[otherId] = msg;
+        if (!latestChats
+            .containsKey(otherId)) {
+          latestChats[otherId] =
+              msg;
         }
       }
 
-      return latestByUser.values.toList();
+      return latestChats.values
+          .toList();
     });
   }
 
@@ -86,34 +97,57 @@ class _ChatsScreenState extends State<ChatsScreen> {
   // GET USER
   // =========================================================
 
-  Future<Map<String, dynamic>> getUser(
+  Future<Map<String, dynamic>>
+  getUser(
       String otherId,
       ) async {
     try {
-      final profile = await client
+      final profile =
+      await client
           .from('profiles')
           .select()
           .eq('id', otherId)
           .maybeSingle();
 
-      final contact = await client
+      final contact =
+      await client
           .from('contacts')
           .select()
           .eq('user_id', myId)
-          .eq('contact_user_id', otherId)
+          .eq(
+        'contact_user_id',
+        otherId,
+      )
           .maybeSingle();
 
+      final String name =
+          contact?['custom_name']
+              ?.toString() ??
+              profile?['full_name']
+                  ?.toString() ??
+              profile?['name']
+                  ?.toString() ??
+              'User';
+
+      final String avatar =
+          profile?['avatar_url']
+              ?.toString() ??
+              '';
+
+      final bool online =
+          profile?['is_online'] ==
+              true;
+
       return {
-        'name':
-        contact?['custom_name'] ??
-            profile?['name'] ??
-            'User',
-        'avatar':
-        profile?['avatar_url'] ?? '',
-        'online':
-        profile?['is_online'] == true,
+        'name': name,
+        'avatar': avatar,
+        'online': online,
       };
-    } catch (_) {
+    } catch (e) {
+      debugPrint(
+        'Get user error: $e',
+      );
+
       return {
         'name': 'User',
         'avatar': '',
@@ -130,12 +164,22 @@ class _ChatsScreenState extends State<ChatsScreen> {
       String otherId,
       ) async {
     try {
-      final rows = await client
+      final rows =
+      await client
           .from('messages')
           .select()
-          .eq('sender_id', otherId)
-          .eq('receiver_id', myId)
-          .neq('status', 'seen');
+          .eq(
+        'sender_id',
+        otherId,
+      )
+          .eq(
+        'receiver_id',
+        myId,
+      )
+          .neq(
+        'status',
+        'seen',
+      );
 
       return rows.length;
     } catch (_) {
@@ -149,14 +193,17 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
   String formatTime(dynamic value) {
     try {
-      final date = DateTime.parse(
+      final date =
+      DateTime.parse(
         value.toString(),
       ).toLocal();
 
       final now = DateTime.now();
 
-      if (date.year == now.year &&
-          date.month == now.month &&
+      if (date.year ==
+          now.year &&
+          date.month ==
+              now.month &&
           date.day == now.day) {
         int hour = date.hour;
 
@@ -165,11 +212,17 @@ class _ChatsScreenState extends State<ChatsScreen> {
             .padLeft(2, '0');
 
         final period =
-        hour >= 12 ? 'PM' : 'AM';
+        hour >= 12
+            ? 'PM'
+            : 'AM';
 
-        if (hour > 12) hour -= 12;
+        if (hour > 12) {
+          hour -= 12;
+        }
 
-        if (hour == 0) hour = 12;
+        if (hour == 0) {
+          hour = 12;
+        }
 
         return '$hour:$minute $period';
       }
@@ -181,14 +234,16 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   // =========================================================
-  // MESSAGE PREVIEW
+  // PREVIEW
   // =========================================================
 
   String formatPreview(
       Map<String, dynamic> message,
       ) {
     final type =
-        message['type']?.toString() ?? 'text';
+        message['type']
+            ?.toString() ??
+            'text';
 
     final content =
         message['content']
@@ -234,17 +289,21 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(
         const SnackBar(
-          content: Text('Chat deleted'),
+          content: Text(
+            'Chat deleted',
+          ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(
         SnackBar(
           content: Text(
             'Delete failed: $e',
@@ -266,7 +325,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
-        builder: (_) => const AuthScreen(),
+        builder: (_) =>
+        const AuthScreen(),
       ),
           (route) => false,
     );
@@ -276,47 +336,65 @@ class _ChatsScreenState extends State<ChatsScreen> {
   // STATUS ICON
   // =========================================================
 
-  Widget buildStatus(String status) {
+  Widget buildStatus(
+      String status,
+      ) {
     switch (status) {
       case 'seen':
         return const Icon(
           Icons.done_all,
           size: 16,
-          color: Color(0xFFFFD700),
+          color: Color(
+            0xFFFFD700,
+          ),
         );
 
       case 'delivered':
         return Icon(
           Icons.done_all,
           size: 16,
-          color: Colors.grey.withValues(
-            alpha: 0.80,
-          ),
+          color: Colors.grey
+              .withAlpha(180),
         );
 
       default:
         return Icon(
           Icons.check,
           size: 16,
-          color: Colors.grey.withValues(
-            alpha: 0.80,
-          ),
+          color: Colors.grey
+              .withAlpha(180),
         );
     }
   }
 
   // =========================================================
-  // EMPTY STATE
+  // EMPTY
   // =========================================================
 
   Widget buildEmptyState() {
-    return const Center(
-      child: Text(
-        'No chats yet',
-        style: TextStyle(
-          fontSize: 18,
-          color: Colors.grey,
-        ),
+    return Center(
+      child: Column(
+        mainAxisAlignment:
+        MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.chat_bubble_outline,
+            size: 70,
+            color:
+            Colors.grey.shade400,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No chats yet',
+            style: TextStyle(
+              fontSize: 20,
+              color:
+              Colors.grey.shade700,
+              fontWeight:
+              FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -336,51 +414,81 @@ class _ChatsScreenState extends State<ChatsScreen> {
     required String status,
     required int unread,
   }) {
-    final muted =
-    mutedChats.contains(otherId);
+    final bool muted =
+    mutedChats.contains(
+      otherId,
+    );
 
     return Container(
-      margin: const EdgeInsets.only(
-        bottom: 16,
+      margin:
+      const EdgeInsets.only(
+        bottom: 14,
       ),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius:
-        BorderRadius.circular(24),
+        BorderRadius.circular(
+          24,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black
+                .withAlpha(8),
+            blurRadius: 10,
+            offset: const Offset(
+              0,
+              4,
+            ),
+          ),
+        ],
       ),
       child: InkWell(
         borderRadius:
-        BorderRadius.circular(24),
+        BorderRadius.circular(
+          24,
+        ),
         onTap: () {
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) =>
                   ChatDetailScreen(
-                    otherUserId: otherId,
-                    otherUserName: name,
-                    otherUserAvatar: avatar,
+                    otherUserId:
+                    otherId,
+                    otherUserName:
+                    name,
+                    otherUserAvatar:
+                    avatar,
                   ),
             ),
           );
         },
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding:
+          const EdgeInsets.all(
+            14,
+          ),
           child: Row(
             children: [
               ProfileAvatar(
                 name: name,
-                imageUrl: avatar,
+                imageUrl:
+                avatar.isEmpty
+                    ? null
+                    : avatar,
                 radius: 30,
                 isOnline: online,
               ),
 
-              const SizedBox(width: 14),
+              const SizedBox(
+                width: 14,
+              ),
 
               Expanded(
                 child: Column(
                   crossAxisAlignment:
-                  CrossAxisAlignment.start,
+                  CrossAxisAlignment
+                      .start,
                   children: [
                     Row(
                       children: [
@@ -393,7 +501,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
                                 .ellipsis,
                             style:
                             const TextStyle(
-                              fontSize: 16,
+                              fontSize:
+                              16,
                               fontWeight:
                               FontWeight
                                   .bold,
@@ -403,19 +512,21 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
                         Text(
                           time,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color:
-                            Colors.grey
-                                .withValues(
-                              alpha: 0.85,
-                            ),
+                          style:
+                          TextStyle(
+                            fontSize:
+                            12,
+                            color: Colors
+                                .grey
+                                .shade600,
                           ),
                         ),
                       ],
                     ),
 
-                    const SizedBox(height: 6),
+                    const SizedBox(
+                      height: 6,
+                    ),
 
                     Row(
                       children: [
@@ -440,12 +551,11 @@ class _ChatsScreenState extends State<ChatsScreen> {
                             overflow:
                             TextOverflow
                                 .ellipsis,
-                            style: TextStyle(
-                              color:
-                              Colors.grey
-                                  .withValues(
-                                alpha: 0.90,
-                              ),
+                            style:
+                            TextStyle(
+                              color: Colors
+                                  .grey
+                                  .shade700,
                             ),
                           ),
                         ),
@@ -458,20 +568,22 @@ class _ChatsScreenState extends State<ChatsScreen> {
                             ),
                             decoration:
                             const BoxDecoration(
-                              color: primary,
+                              color:
+                              primary,
                               shape:
                               BoxShape.circle,
                             ),
                             child: Text(
-                              unread.toString(),
+                              unread
+                                  .toString(),
                               style:
                               const TextStyle(
                                 color:
                                 Colors.white,
-                                fontSize: 10,
+                                fontSize:
+                                10,
                                 fontWeight:
-                                FontWeight
-                                    .bold,
+                                FontWeight.bold,
                               ),
                             ),
                           ),
@@ -482,7 +594,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
               ),
 
               PopupMenuButton<String>(
-                onSelected: (value) async {
+                onSelected: (
+                    value,
+                    ) async {
                   switch (value) {
                     case 'view':
                       Navigator.push(
@@ -490,7 +604,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
                         MaterialPageRoute(
                           builder: (_) =>
                               ContactProfileScreen(
-                                userId: otherId,
+                                userId:
+                                otherId,
                               ),
                         ),
                       );
@@ -499,11 +614,13 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     case 'mute':
                       setState(() {
                         if (muted) {
-                          mutedChats.remove(
+                          mutedChats
+                              .remove(
                             otherId,
                           );
                         } else {
-                          mutedChats.add(
+                          mutedChats
+                              .add(
                             otherId,
                           );
                         }
@@ -512,7 +629,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
                     case 'archive':
                       setState(() {
-                        archivedChats.add(
+                        archivedChats
+                            .add(
                           otherId,
                         );
                       });
@@ -525,11 +643,13 @@ class _ChatsScreenState extends State<ChatsScreen> {
                       break;
                   }
                 },
-                itemBuilder: (context) => [
+                itemBuilder:
+                    (context) => [
                   const PopupMenuItem(
                     value: 'view',
-                    child:
-                    Text('View Contact'),
+                    child: Text(
+                      'View Contact',
+                    ),
                   ),
                   PopupMenuItem(
                     value: 'mute',
@@ -541,12 +661,15 @@ class _ChatsScreenState extends State<ChatsScreen> {
                   ),
                   const PopupMenuItem(
                     value: 'archive',
-                    child: Text('Archive'),
+                    child: Text(
+                      'Archive',
+                    ),
                   ),
                   const PopupMenuItem(
                     value: 'delete',
-                    child:
-                    Text('Delete Chat'),
+                    child: Text(
+                      'Delete Chat',
+                    ),
                   ),
                 ],
               ),
@@ -562,10 +685,14 @@ class _ChatsScreenState extends State<ChatsScreen> {
   // =========================================================
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+      BuildContext context,
+      ) {
     return Scaffold(
       backgroundColor:
-      const Color(0xFFF5F6FF),
+      const Color(
+        0xFFF5F6FF,
+      ),
 
       floatingActionButton:
       FloatingActionButton(
@@ -608,19 +735,24 @@ class _ChatsScreenState extends State<ChatsScreen> {
                       style: TextStyle(
                         fontSize: 30,
                         fontWeight:
-                        FontWeight.bold,
+                        FontWeight
+                            .bold,
                       ),
                     ),
                   ),
 
                   PopupMenuButton<String>(
-                    onSelected: (value) {
-                      switch (value) {
+                    onSelected: (
+                        value,
+                        ) {
+                      switch (
+                      value) {
                         case 'archived':
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
+                              builder:
+                                  (_) =>
                               const ArchivedChatsScreen(),
                             ),
                           );
@@ -630,7 +762,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
+                              builder:
+                                  (_) =>
                               const StarredMessagesScreen(),
                             ),
                           );
@@ -640,7 +773,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
+                              builder:
+                                  (_) =>
                               const SettingsScreen(),
                             ),
                           );
@@ -651,27 +785,35 @@ class _ChatsScreenState extends State<ChatsScreen> {
                           break;
                       }
                     },
-                    itemBuilder: (context) => [
+                    itemBuilder:
+                        (context) => [
                       const PopupMenuItem(
-                        value: 'archived',
+                        value:
+                        'archived',
                         child: Text(
                           'Archived Chats',
                         ),
                       ),
                       const PopupMenuItem(
-                        value: 'starred',
+                        value:
+                        'starred',
                         child: Text(
                           'Starred Messages',
                         ),
                       ),
                       const PopupMenuItem(
-                        value: 'settings',
-                        child:
-                        Text('Settings'),
+                        value:
+                        'settings',
+                        child: Text(
+                          'Settings',
+                        ),
                       ),
                       const PopupMenuItem(
-                        value: 'logout',
-                        child: Text('Logout'),
+                        value:
+                        'logout',
+                        child: Text(
+                          'Logout',
+                        ),
                       ),
                     ],
                   ),
@@ -685,10 +827,14 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
             Padding(
               padding:
-              const EdgeInsets.all(20),
+              const EdgeInsets.all(
+                20,
+              ),
               child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
+                decoration:
+                BoxDecoration(
+                  color:
+                  Colors.white,
                   borderRadius:
                   BorderRadius.circular(
                     20,
@@ -697,30 +843,30 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 child: TextField(
                   controller:
                   searchController,
-                  onChanged: (value) {
+                  onChanged: (
+                      value,
+                      ) {
                     setState(() {
                       search =
-                          value.trim();
+                          value
+                              .trim();
                     });
                   },
-                  decoration: InputDecoration(
+                  decoration:
+                  InputDecoration(
                     hintText:
                     'Search chats...',
-                    hintStyle: TextStyle(
-                      color:
-                      Colors.grey
-                          .withValues(
-                        alpha: 0.60,
-                      ),
-                    ),
-                    prefixIcon: const Icon(
+                    prefixIcon:
+                    const Icon(
                       Icons.search,
                     ),
                     border:
-                    InputBorder.none,
+                    InputBorder
+                        .none,
                     contentPadding:
                     const EdgeInsets.symmetric(
-                      vertical: 18,
+                      vertical:
+                      18,
                     ),
                   ),
                 ),
@@ -732,13 +878,17 @@ class _ChatsScreenState extends State<ChatsScreen> {
             // =================================================
 
             Expanded(
-              child: StreamBuilder<
+              child:
+              StreamBuilder<
                   List<
                       Map<String,
                           dynamic>>>(
-                stream: getChats(),
-                builder:
-                    (context, snapshot) {
+                stream:
+                getChats(),
+                builder: (
+                    context,
+                    snapshot,
+                    ) {
                   if (snapshot
                       .connectionState ==
                       ConnectionState
@@ -750,9 +900,11 @@ class _ChatsScreenState extends State<ChatsScreen> {
                   }
 
                   final chats =
-                      snapshot.data ?? [];
+                      snapshot.data ??
+                          [];
 
-                  if (chats.isEmpty) {
+                  if (chats
+                      .isEmpty) {
                     return buildEmptyState();
                   }
 
@@ -765,8 +917,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     ),
                     itemCount:
                     chats.length,
-                    itemBuilder:
-                        (context, index) {
+                    itemBuilder: (
+                        context,
+                        index,
+                        ) {
                       final message =
                       chats[index];
 
@@ -782,7 +936,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
                       if (archivedChats
                           .contains(
-                          otherId)) {
+                        otherId,
+                      )) {
                         return const SizedBox
                             .shrink();
                       }
@@ -844,8 +999,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
                             otherId:
                             otherId,
                             name: name,
-                            avatar: user[
-                            'avatar']
+                            avatar:
+                            user['avatar']
                                 .toString(),
                             online:
                             user['online'] ==
@@ -860,12 +1015,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
                               'created_at'],
                             ),
                             isMe:
-                            message[
-                            'sender_id'] ==
+                            message['sender_id'] ==
                                 myId,
                             status:
-                            message[
-                            'status']
+                            message['status']
                                 ?.toString() ??
                                 'sent',
                             unread:

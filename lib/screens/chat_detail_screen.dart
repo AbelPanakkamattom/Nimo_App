@@ -17,67 +17,89 @@ import '../widgets/profile_avatarz.dart';
 class ChatDetailScreen extends StatefulWidget {
   final String otherUserId;
   final String otherUserName;
-  final String otherUserAvatar;
+  final String? otherUserAvatar;
 
   const ChatDetailScreen({
     super.key,
     required this.otherUserId,
     required this.otherUserName,
-    this.otherUserAvatar = '',
+    this.otherUserAvatar,
   });
 
   @override
-  State<ChatDetailScreen> createState() => _ChatDetailScreenState();
+  State<ChatDetailScreen> createState() =>
+      _ChatDetailScreenState();
 }
 
-class _ChatDetailScreenState extends State<ChatDetailScreen> {
-  static const Color background = Color(0xFFF5F6FF);
+class _ChatDetailScreenState
+    extends State<ChatDetailScreen> {
+  static const Color primary =
+  Color(0xFF6C5CE7);
 
-  final TextEditingController _controller = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
+  static const Color background =
+  Color(0xFFF5F6FF);
+
+  final TextEditingController
+  _controller =
+  TextEditingController();
+
+  final ScrollController
+  _scrollController =
+  ScrollController();
 
   bool _isSending = false;
 
   // =========================================================
-  // CURRENT USER INFO
+  // CURRENT USER
   // =========================================================
+
   String get _myUserId {
-    return Supabase.instance.client.auth.currentUser?.id ?? '';
+    return Supabase.instance.client.auth.currentUser?.id ??
+        '';
   }
 
   String get _myUserName {
-    final user = Supabase.instance.client.auth.currentUser;
+    final user =
+        Supabase.instance.client.auth.currentUser;
 
     if (user == null) {
       return 'NIMO User';
     }
 
-    final metadata = user.userMetadata ?? {};
+    final metadata =
+        user.userMetadata ?? {};
 
     final name =
         metadata['full_name'] ??
             metadata['display_name'] ??
             metadata['name'] ??
             metadata['username'] ??
-            user.email?.split('@').first ??
+            user.email
+                ?.split('@')
+                .first ??
             'NIMO User';
 
     return name.toString();
   }
 
   // =========================================================
-  // INIT STATE
+  // INIT
   // =========================================================
+
   @override
   void initState() {
     super.initState();
 
-    SupabaseChatService.markAsSeen(widget.otherUserId);
+    // Mark messages as seen
+    SupabaseChatService.markAsSeen(
+      widget.otherUserId,
+    );
   }
 
   // =========================================================
   // DISPOSE
   // =========================================================
+
   @override
   void dispose() {
     _controller.dispose();
@@ -88,37 +110,48 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   // SEND TEXT MESSAGE
   // =========================================================
-  Future<void> _sendMessage() async {
-    final text = _controller.text.trim();
 
-    if (text.isEmpty || _isSending) {
+  Future<void> _sendMessage() async {
+    final text =
+    _controller.text.trim();
+
+    if (text.isEmpty ||
+        _isSending) {
       return;
     }
 
     _controller.clear();
 
     try {
-      await SupabaseChatService.sendMessage(
-        receiverId: widget.otherUserId,
+      await SupabaseChatService
+          .sendMessage(
+        receiverId:
+        widget.otherUserId,
         content: text,
         type: 'text',
       );
 
       _scrollToBottom();
-    } catch (e) {
-      _showError('Failed to send message');
+    } catch (_) {
+      _showError(
+        'Failed to send message',
+      );
     }
   }
 
   // =========================================================
   // SEND IMAGE
   // =========================================================
+
   Future<void> _sendImage() async {
     try {
-      final picker = ImagePicker();
+      final picker =
+      ImagePicker();
 
-      final image = await picker.pickImage(
-        source: ImageSource.gallery,
+      final image =
+      await picker.pickImage(
+        source:
+        ImageSource.gallery,
         imageQuality: 80,
       );
 
@@ -126,29 +159,37 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         return;
       }
 
-      if (mounted) {
-        setState(() => _isSending = true);
-      }
+      setState(() {
+        _isSending = true;
+      });
 
-      final url = await SupabaseStorageService.uploadChatMedia(
+      final url =
+      await SupabaseStorageService
+          .uploadChatMedia(
         file: File(image.path),
         bucket: 'message',
         folder: 'images',
       );
 
-      await SupabaseChatService.sendMessage(
-        receiverId: widget.otherUserId,
+      await SupabaseChatService
+          .sendMessage(
+        receiverId:
+        widget.otherUserId,
         content: '📷 Image',
         type: 'image',
         mediaUrl: url,
       );
 
       _scrollToBottom();
-    } catch (e) {
-      _showError('Failed to send image');
+    } catch (_) {
+      _showError(
+        'Failed to send image',
+      );
     } finally {
       if (mounted) {
-        setState(() => _isSending = false);
+        setState(() {
+          _isSending = false;
+        });
       }
     }
   }
@@ -156,41 +197,53 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   // SEND VIDEO
   // =========================================================
+
   Future<void> _sendVideo() async {
     try {
-      final picker = ImagePicker();
+      final picker =
+      ImagePicker();
 
-      final video = await picker.pickVideo(
-        source: ImageSource.gallery,
+      final video =
+      await picker.pickVideo(
+        source:
+        ImageSource.gallery,
       );
 
       if (video == null) {
         return;
       }
 
-      if (mounted) {
-        setState(() => _isSending = true);
-      }
+      setState(() {
+        _isSending = true;
+      });
 
-      final url = await SupabaseStorageService.uploadChatMedia(
+      final url =
+      await SupabaseStorageService
+          .uploadChatMedia(
         file: File(video.path),
         bucket: 'videos',
         folder: 'chat_videos',
       );
 
-      await SupabaseChatService.sendMessage(
-        receiverId: widget.otherUserId,
+      await SupabaseChatService
+          .sendMessage(
+        receiverId:
+        widget.otherUserId,
         content: '🎥 Video',
         type: 'video',
         mediaUrl: url,
       );
 
       _scrollToBottom();
-    } catch (e) {
-      _showError('Failed to send video');
+    } catch (_) {
+      _showError(
+        'Failed to send video',
+      );
     } finally {
       if (mounted) {
-        setState(() => _isSending = false);
+        setState(() {
+          _isSending = false;
+        });
       }
     }
   }
@@ -198,67 +251,92 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   // SEND DOCUMENT
   // =========================================================
-  Future<void> _sendDocument() async {
+
+  Future<void>
+  _sendDocument() async {
     try {
-      final result = await FilePicker.platform.pickFiles();
+      final result =
+      await FilePicker
+          .platform
+          .pickFiles();
 
-      if (result == null || result.files.isEmpty) {
+      if (result == null ||
+          result.files.isEmpty) {
         return;
       }
 
-      final pickedFile = result.files.single;
-      final filePath = pickedFile.path;
+      final pickedFile =
+          result.files.single;
 
-      if (filePath == null || filePath.trim().isEmpty) {
+      if (pickedFile.path ==
+          null) {
         return;
       }
 
-      final fileName = pickedFile.name;
+      setState(() {
+        _isSending = true;
+      });
 
-      if (mounted) {
-        setState(() => _isSending = true);
-      }
-
-      final url = await SupabaseStorageService.uploadChatMedia(
-        file: File(filePath),
+      final url =
+      await SupabaseStorageService
+          .uploadChatMedia(
+        file: File(
+          pickedFile.path!,
+        ),
         bucket: 'documents',
         folder: 'chat_docs',
       );
 
-      await SupabaseChatService.sendMessage(
-        receiverId: widget.otherUserId,
-        content: fileName,
+      await SupabaseChatService
+          .sendMessage(
+        receiverId:
+        widget.otherUserId,
+        content:
+        pickedFile.name,
         type: 'document',
         mediaUrl: url,
-        fileName: fileName,
+        fileName:
+        pickedFile.name,
       );
 
       _scrollToBottom();
-    } catch (e) {
-      _showError('Failed to send document');
+    } catch (_) {
+      _showError(
+        'Failed to send document',
+      );
     } finally {
       if (mounted) {
-        setState(() => _isSending = false);
+        setState(() {
+          _isSending = false;
+        });
       }
     }
   }
 
   // =========================================================
-  // VOICE RECORDING PLACEHOLDER
+  // VOICE PLACEHOLDER
   // =========================================================
+
   void _showVoicePlaceholder() {
-    _showError('Voice recording support coming soon.');
+    _showError(
+      'Voice recording support coming soon.',
+    );
   }
 
   // =========================================================
-  // ENSURE ZEGO INITIALIZED
+  // ZEGO INITIALIZATION
   // =========================================================
-  Future<void> _ensureZegoInitialized() async {
+
+  Future<void>
+  _ensureZegoInitialized() async {
     if (_myUserId.isEmpty) {
-      throw Exception('User not logged in');
+      throw Exception(
+        'User not logged in',
+      );
     }
 
-    if (!ZegoCallService.isInitialized) {
+    if (!ZegoCallService
+        .isInitialized) {
       await ZegoCallService.init(
         userID: _myUserId,
         userName: _myUserName,
@@ -269,89 +347,380 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   // START VOICE CALL
   // =========================================================
-  Future<void> _startVoiceCall() async {
+
+  Future<void>
+  _startVoiceCall() async {
     try {
       await _ensureZegoInitialized();
 
-      await ZegoCallService.startVoiceCall(
-        targetUserID: widget.otherUserId,
-        targetUserName: widget.otherUserName,
+      await ZegoCallService
+          .startVoiceCall(
+        targetUserID:
+        widget.otherUserId,
+        targetUserName:
+        widget.otherUserName,
       );
     } catch (e) {
-      _showError('Voice call failed: $e');
+      _showError(
+        'Voice call failed: $e',
+      );
     }
   }
 
   // =========================================================
   // START VIDEO CALL
   // =========================================================
-  Future<void> _startVideoCall() async {
+
+  Future<void>
+  _startVideoCall() async {
     try {
       await _ensureZegoInitialized();
 
-      await ZegoCallService.startVideoCall(
-        targetUserID: widget.otherUserId,
-        targetUserName: widget.otherUserName,
+      await ZegoCallService
+          .startVideoCall(
+        targetUserID:
+        widget.otherUserId,
+        targetUserName:
+        widget.otherUserName,
       );
     } catch (e) {
-      _showError('Video call failed: $e');
+      _showError(
+        'Video call failed: $e',
+      );
     }
   }
 
   // =========================================================
   // FORMAT DATE/TIME
   // =========================================================
-  String _formatDateTime(DateTime dateTime) {
-    return DateFormat('d MMM, h:mm a').format(dateTime.toLocal());
+
+  String _formatDateTime(
+      DateTime dateTime,
+      ) {
+    return DateFormat(
+      'd MMM, h:mm a',
+    ).format(
+      dateTime.toLocal(),
+    );
   }
 
   // =========================================================
   // MESSAGE STATUS
   // =========================================================
-  String _statusFor(Message message) {
+
+  String _statusFor(
+      Message message,
+      ) {
     return message.status.name;
   }
 
   // =========================================================
-  // BUILD MESSAGE BUBBLE
+  // CALL ICON
   // =========================================================
-  Widget _buildMessageBubble(Message message) {
-    final isMe = message.senderId == _myUserId;
-    final mediaUrl = message.mediaUrl ?? '';
 
-    final displayMessage = message.type == MessageType.text
+  IconData _callIcon(
+      Message message,
+      ) {
+    if (message.isVideoCall) {
+      return Icons.videocam;
+    }
+
+    return Icons.call;
+  }
+
+  // =========================================================
+  // CALL BUBBLE
+  // =========================================================
+
+  Widget _buildCallBubble(
+      Message message,
+      ) {
+    final isMe =
+        message.senderId ==
+            _myUserId;
+
+    final bubbleColor =
+    isMe
+        ? primary
+        : Colors.white;
+
+    final textColor =
+    isMe
+        ? Colors.white
+        : Colors.black87;
+
+    final secondaryColor =
+    isMe
+        ? Colors.white70
+        : Colors.grey.shade600;
+
+    final description =
+    message.callDescription(
+      _myUserId,
+    );
+
+    String durationText = '';
+
+    if (message.callDuration != null &&
+        message.callDuration! > 0) {
+      final duration =
+      Duration(
+        seconds:
+        message.callDuration!,
+      );
+
+      final minutes = duration
+          .inMinutes
+          .toString()
+          .padLeft(2, '0');
+
+      final seconds =
+      (duration.inSeconds % 60)
+          .toString()
+          .padLeft(2, '0');
+
+      durationText =
+      '$minutes:$seconds';
+    }
+
+    return Align(
+      alignment:
+      isMe
+          ? Alignment
+          .centerRight
+          : Alignment
+          .centerLeft,
+      child: Container(
+        margin:
+        const EdgeInsets
+            .symmetric(
+          vertical: 6,
+        ),
+        padding:
+        const EdgeInsets
+            .all(12),
+        constraints:
+        BoxConstraints(
+          maxWidth:
+          MediaQuery.of(
+            context,
+          )
+              .size
+              .width *
+              0.75,
+        ),
+        decoration:
+        BoxDecoration(
+          color:
+          bubbleColor,
+          borderRadius:
+          BorderRadius
+              .circular(
+            22,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors
+                  .black
+                  .withValues(
+                alpha: 0.06,
+              ),
+              blurRadius:
+              8,
+              offset:
+              const Offset(
+                0,
+                3,
+              ),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment:
+          CrossAxisAlignment
+              .start,
+          children: [
+            Row(
+              mainAxisSize:
+              MainAxisSize.min,
+              children: [
+                Icon(
+                  _callIcon(
+                    message,
+                  ),
+                  color: message
+                      .isMissedCall
+                      ? Colors
+                      .redAccent
+                      : (isMe
+                      ? Colors
+                      .white
+                      : primary),
+                  size: 22,
+                ),
+                const SizedBox(
+                  width: 8,
+                ),
+                Flexible(
+                  child: Text(
+                    description,
+                    style:
+                    TextStyle(
+                      color:
+                      textColor,
+                      fontSize:
+                      15,
+                      fontWeight:
+                      FontWeight
+                          .w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (durationText
+                .isNotEmpty) ...[
+              const SizedBox(
+                height: 4,
+              ),
+              Text(
+                durationText,
+                style:
+                TextStyle(
+                  color:
+                  secondaryColor,
+                  fontSize:
+                  12,
+                ),
+              ),
+            ],
+            const SizedBox(
+              height: 8,
+            ),
+            Row(
+              mainAxisSize:
+              MainAxisSize.min,
+              children: [
+                Text(
+                  _formatDateTime(
+                    message
+                        .createdAt,
+                  ),
+                  style:
+                  TextStyle(
+                    fontSize:
+                    11,
+                    color:
+                    secondaryColor,
+                  ),
+                ),
+                if (isMe) ...[
+                  const SizedBox(
+                    width: 4,
+                  ),
+                  Icon(
+                    Icons
+                        .done_all,
+                    size: 16,
+                    color: message
+                        .isSeen
+                        ? const Color(
+                      0xFFFFD700,
+                    )
+                        : Colors
+                        .white70,
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // =========================================================
+  // MESSAGE BUBBLE
+  // =========================================================
+
+  Widget _buildMessageBubble(
+      Message message,
+      ) {
+    // Show special call bubble
+    if (message.isAnyCall) {
+      return _buildCallBubble(
+        message,
+      );
+    }
+
+    final isMe =
+        message.senderId ==
+            _myUserId;
+
+    final mediaUrl =
+        message.mediaUrl ?? '';
+
+    final displayMessage =
+    message.type ==
+        MessageType.text
         ? message.content
-        : (mediaUrl.isNotEmpty ? mediaUrl : message.content);
+        : (mediaUrl
+        .isNotEmpty
+        ? mediaUrl
+        : message
+        .content);
 
     return MessageBubble(
-      message: displayMessage,
-      time: _formatDateTime(message.createdAt),
+      message:
+      displayMessage,
+      time: _formatDateTime(
+        message.createdAt,
+      ),
       isMe: isMe,
-      isImage: message.type == MessageType.image,
-      isAudio: message.type == MessageType.audio,
-      isDocument: message.type == MessageType.document,
-      isVideo: message.type == MessageType.video,
-      status: _statusFor(message),
-      fileName: message.fileName,
+      isImage:
+      message.type ==
+          MessageType.image,
+      isAudio:
+      message.type ==
+          MessageType.audio,
+      isDocument:
+      message.type ==
+          MessageType
+              .document,
+      isVideo:
+      message.type ==
+          MessageType.video,
+      status:
+      _statusFor(message),
+      fileName:
+      message.fileName,
     );
   }
 
   // =========================================================
   // AUTO SCROLL
   // =========================================================
+
   void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) {
       if (!mounted) {
         return;
       }
 
-      if (!_scrollController.hasClients) {
+      if (!_scrollController
+          .hasClients) {
         return;
       }
 
       _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
+        _scrollController
+            .position
+            .maxScrollExtent,
+        duration:
+        const Duration(
+          milliseconds: 300,
+        ),
         curve: Curves.easeOut,
       );
     });
@@ -360,15 +729,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   // SHOW ERROR
   // =========================================================
-  void _showError(String text) {
+
+  void _showError(
+      String message,
+      ) {
     if (!mounted) {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    ScaffoldMessenger.of(context)
+        .showSnackBar(
       SnackBar(
-        content: Text(text),
-        behavior: SnackBarBehavior.floating,
+        content:
+        Text(message),
+        behavior:
+        SnackBarBehavior
+            .floating,
       ),
     );
   }
@@ -376,44 +752,69 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // =========================================================
   // BUILD
   // =========================================================
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+      BuildContext context,
+      ) {
     return Scaffold(
-      backgroundColor: background,
-      resizeToAvoidBottomInset: true,
+      backgroundColor:
+      background,
+      resizeToAvoidBottomInset:
+      true,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        backgroundColor:
+        Colors.white,
+        foregroundColor:
+        Colors.black,
         elevation: 0,
         titleSpacing: 0,
         title: Row(
           children: [
             ProfileAvatar(
-              name: widget.otherUserName,
-              imageUrl: widget.otherUserAvatar,
+              name: widget
+                  .otherUserName,
+              imageUrl: widget
+                  .otherUserAvatar,
               radius: 20,
               isOnline: true,
             ),
-            const SizedBox(width: 10),
+            const SizedBox(
+              width: 10,
+            ),
             Expanded(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment:
+                CrossAxisAlignment
+                    .start,
+                mainAxisSize:
+                MainAxisSize.min,
                 children: [
                   Text(
-                    widget.otherUserName,
+                    widget
+                        .otherUserName,
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
+                    overflow:
+                    TextOverflow
+                        .ellipsis,
+                    style:
+                    const TextStyle(
+                      fontWeight:
+                      FontWeight
+                          .bold,
+                      fontSize:
+                      16,
                     ),
                   ),
                   const Text(
                     'Online',
-                    style: TextStyle(
-                      color: Colors.green,
-                      fontSize: 12,
+                    style:
+                    TextStyle(
+                      color:
+                      Colors
+                          .green,
+                      fontSize:
+                      12,
                     ),
                   ),
                 ],
@@ -423,64 +824,113 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         ),
         actions: [
           IconButton(
-            onPressed: _startVoiceCall,
-            icon: const Icon(Icons.call),
+            onPressed:
+            _startVoiceCall,
+            icon:
+            const Icon(
+              Icons.call,
+            ),
           ),
           IconButton(
-            onPressed: _startVideoCall,
-            icon: const Icon(Icons.videocam),
+            onPressed:
+            _startVideoCall,
+            icon:
+            const Icon(
+              Icons.videocam,
+            ),
           ),
         ],
       ),
       body: Column(
         children: [
           Expanded(
-            child: StreamBuilder<List<Message>>(
-              stream: SupabaseChatService.getChat(
-                widget.otherUserId,
+            child: StreamBuilder<
+                List<Message>>(
+              stream:
+              SupabaseChatService
+                  .getChat(
+                widget
+                    .otherUserId,
               ),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
+              builder: (
+                  context,
+                  snapshot,
+                  ) {
+                if (!snapshot
+                    .hasData) {
                   return const Center(
-                    child: CircularProgressIndicator(),
+                    child:
+                    CircularProgressIndicator(
+                      color:
+                      primary,
+                    ),
                   );
                 }
 
-                final messages = snapshot.data!;
+                final messages =
+                    snapshot.data ??
+                        [];
 
-                if (messages.isEmpty) {
+                if (messages
+                    .isEmpty) {
                   return const Center(
-                    child: Text('No messages yet'),
+                    child: Text(
+                      'No messages yet',
+                    ),
                   );
                 }
 
-                WidgetsBinding.instance.addPostFrameCallback(
-                      (_) => _scrollToBottom(),
+                WidgetsBinding
+                    .instance
+                    .addPostFrameCallback(
+                      (_) =>
+                      _scrollToBottom(),
                 );
 
                 return ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(14),
+                  controller:
+                  _scrollController,
+                  padding:
+                  const EdgeInsets
+                      .all(14),
                   keyboardDismissBehavior:
-                  ScrollViewKeyboardDismissBehavior.onDrag,
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    return _buildMessageBubble(messages[index]);
+                  ScrollViewKeyboardDismissBehavior
+                      .onDrag,
+                  itemCount:
+                  messages
+                      .length,
+                  itemBuilder: (
+                      context,
+                      index,
+                      ) {
+                    return _buildMessageBubble(
+                      messages[
+                      index],
+                    );
                   },
                 );
               },
             ),
           ),
           ChatInputWidget(
-            controller: _controller,
-            isSending: _isSending,
-            onSend: _sendMessage,
-            onImage: _sendImage,
-            onDocument: _sendDocument,
-            onVideo: _sendVideo,
-            onVoice: _showVoicePlaceholder,
-            onTyping: (text) {
-              // Typing indicator can be implemented later.
+            controller:
+            _controller,
+            isSending:
+            _isSending,
+            onSend:
+            _sendMessage,
+            onImage:
+            _sendImage,
+            onDocument:
+            _sendDocument,
+            onVideo:
+            _sendVideo,
+            onVoice:
+            _showVoicePlaceholder,
+            onTyping: (
+                text,
+                ) {
+              // Optional typing indicator
             },
           ),
         ],

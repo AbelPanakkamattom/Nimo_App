@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
-import 'contacts_screen.dart';
+import '../models/call_model.dart';
+import '../services/call_history_service.dart';
+import '../services/zego_call_service.dart';
+import '../widgets/profile_avatarz.dart';
 
 class CallsScreen extends StatefulWidget {
   const CallsScreen({super.key});
@@ -13,95 +17,161 @@ class _CallsScreenState extends State<CallsScreen> {
   static const Color primary = Color(0xFF6C5CE7);
   static const Color background = Color(0xFFF5F6FF);
 
-  final TextEditingController _searchController =
-  TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
+  String _search = '';
 
-  late List<CallModel> _allCalls;
-  late List<CallModel> _filteredCalls;
+  // =========================================================
+  // START VOICE CALL
+  // =========================================================
+  Future<void> _startVoiceCall(CallModel call) async {
+    try {
+      await ZegoCallService.startVoiceCall(
+        targetUserID: call.otherUserId,
+        targetUserName: call.otherUserName,
+      );
+    } catch (e) {
+      if (!mounted) return;
 
-  @override
-  void initState() {
-    super.initState();
-    _allCalls = List<CallModel>.from(_dummyCalls);
-    _filteredCalls = List<CallModel>.from(_dummyCalls);
-    _searchController.addListener(_filterCalls);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Voice call failed: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  // =========================================================
+  // START VIDEO CALL
+  // =========================================================
+  Future<void> _startVideoCall(CallModel call) async {
+    try {
+      await ZegoCallService.startVideoCall(
+        targetUserID: call.otherUserId,
+        targetUserName: call.otherUserName,
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Video call failed: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  // =========================================================
+  // FORMAT SECTION TITLE
+  // =========================================================
+  String _sectionTitle(DateTime date) {
+    final local = date.toLocal();
+    final now = DateTime.now();
+
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final target = DateTime(local.year, local.month, local.day);
+
+    if (target == today) {
+      return 'Today';
+    }
+
+    if (target == yesterday) {
+      return 'Yesterday';
+    }
+
+    return 'Older';
+  }
+
+  // =========================================================
+  // FORMAT TIME
+  // =========================================================
+  String _formatTime(DateTime date) {
+    final local = date.toLocal();
+    final section = _sectionTitle(local);
+
+    if (section == 'Today') {
+      return 'Today, ${DateFormat('h:mm a').format(local)}';
+    }
+
+    if (section == 'Yesterday') {
+      return 'Yesterday, ${DateFormat('h:mm a').format(local)}';
+    }
+
+    return DateFormat('MMM d, h:mm a').format(local);
+  }
+
+  // =========================================================
+  // CALL DIRECTION ICON
+  // =========================================================
+  IconData _directionIcon(CallModel call) {
+    if (call.isMissed) {
+      return Icons.call_missed;
+    }
+
+    if (call.isOutgoing) {
+      return Icons.north_east;
+    }
+
+    return Icons.south_west;
+  }
+
+  // =========================================================
+  // CALL DIRECTION COLOR
+  // =========================================================
+  Color _directionColor(CallModel call) {
+    if (call.isMissed) {
+      return Colors.red;
+    }
+
+    if (call.isOutgoing) {
+      return Colors.blue;
+    }
+
+    return Colors.green;
+  }
+
+  // =========================================================
+  // TRAILING ICON
+  // =========================================================
+  IconData _callTypeIcon(CallModel call) {
+    return call.isVideoCall ? Icons.videocam : Icons.call;
   }
 
   // =========================================================
   // FILTER CALLS
   // =========================================================
-  void _filterCalls() {
-    final query =
-    _searchController.text.trim().toLowerCase();
+  List<CallModel> _filterCalls(List<CallModel> calls) {
+    if (_search.trim().isEmpty) {
+      return calls;
+    }
 
-    if (!mounted) return;
+    final query = _search.toLowerCase();
 
-    setState(() {
-      if (query.isEmpty) {
-        _filteredCalls =
-        List<CallModel>.from(_allCalls);
-      } else {
-        _filteredCalls = _allCalls.where((call) {
-          return call.name
-              .toLowerCase()
-              .contains(query) ||
-              call.time
-                  .toLowerCase()
-                  .contains(query);
-        }).toList();
-      }
-    });
+    return calls.where((call) {
+      return call.otherUserName.toLowerCase().contains(query);
+    }).toList();
   }
 
   // =========================================================
   // GROUP CALLS
   // =========================================================
-  Map<String, List<CallModel>> _groupCalls() {
+  Map<String, List<CallModel>> _groupCalls(List<CallModel> calls) {
     final Map<String, List<CallModel>> grouped = {
       'Today': [],
       'Yesterday': [],
       'Older': [],
     };
 
-    for (final call in _filteredCalls) {
-      if (call.time.startsWith('Today')) {
-        grouped['Today']!.add(call);
-      } else if (call.time.startsWith('Yesterday')) {
-        grouped['Yesterday']!.add(call);
-      } else {
-        grouped['Older']!.add(call);
-      }
+    for (final call in calls) {
+      final section = _sectionTitle(call.createdAt);
+      grouped[section]!.add(call);
     }
 
+    grouped.removeWhere((key, value) => value.isEmpty);
+
     return grouped;
-  }
-
-  // =========================================================
-  // START CALL
-  // =========================================================
-  void _callUser(CallModel call) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          call.video
-              ? 'Starting video call with ${call.name}...'
-              : 'Calling ${call.name}...',
-        ),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  // =========================================================
-  // OPEN CONTACTS
-  // =========================================================
-  void _openContacts() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const ContactsScreen(),
-      ),
-    );
   }
 
   // =========================================================
@@ -109,112 +179,28 @@ class _CallsScreenState extends State<CallsScreen> {
   // =========================================================
   Widget _buildEmptyState() {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment:
-          MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                color: primary.withAlpha(25),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.call_outlined,
-                size: 48,
-                color: primary,
-              ),
-            ),
-            const SizedBox(height: 24),
-            const Text(
-              'No Call History',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1E1E1E),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Your recent voice and video calls '
-                  'will appear here.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade600,
-              ),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _openContacts,
-              icon: const Icon(Icons.add_call),
-              label: const Text(
-                'Start New Call',
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primary,
-                foregroundColor: Colors.white,
-                padding:
-                const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 14,
-                ),
-                shape:
-                RoundedRectangleBorder(
-                  borderRadius:
-                  BorderRadius.circular(16),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // =========================================================
-  // HEADER
-  // =========================================================
-  Widget _buildHeader() {
-    return Padding(
-      padding:
-      const EdgeInsets.fromLTRB(20, 18, 20, 0),
-      child: Row(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Expanded(
-            child: Text(
-              'Calls',
-              style: TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1E1E1E),
-              ),
+          Icon(
+            Icons.call_outlined,
+            size: 72,
+            color: Colors.grey.shade400,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No calls yet',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade700,
             ),
           ),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius:
-              BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withAlpha(10),
-                  blurRadius: 10,
-                  offset:
-                  const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: IconButton(
-              onPressed: _openContacts,
-              tooltip: 'New Call',
-              icon: const Icon(
-                Icons.add_ic_call,
-                color: primary,
-              ),
+          const SizedBox(height: 8),
+          Text(
+            'Your call history will appear here.',
+            style: TextStyle(
+              color: Colors.grey.shade500,
             ),
           ),
         ],
@@ -223,95 +209,138 @@ class _CallsScreenState extends State<CallsScreen> {
   }
 
   // =========================================================
-  // SEARCH BAR
+  // CALL TILE
   // =========================================================
-  Widget _buildSearchBar() {
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius:
-          BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withAlpha(6),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+  Widget _buildCallTile(CallModel call) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(10),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            ProfileAvatar(
+              name: call.otherUserName,
+              imageUrl: call.otherUserAvatar,
+              radius: 30,
+              isOnline: false,
+            ),
+
+            const SizedBox(width: 16),
+
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    call.otherUserName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+
+                  const SizedBox(height: 6),
+
+                  Row(
+                    children: [
+                      Icon(
+                        _directionIcon(call),
+                        size: 18,
+                        color: _directionColor(call),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _formatTime(call.createdAt),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  if (call.duration > 0) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Duration: ${Duration(seconds: call.duration).inMinutes} min',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            const SizedBox(width: 12),
+
+            InkWell(
+              onTap: () {
+                if (call.isVideoCall) {
+                  _startVideoCall(call);
+                } else {
+                  _startVoiceCall(call);
+                }
+              },
+              borderRadius: BorderRadius.circular(30),
+              child: Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: primary.withAlpha(20),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  _callTypeIcon(call),
+                  color: primary,
+                  size: 28,
+                ),
+              ),
             ),
           ],
-        ),
-        child: TextField(
-          controller: _searchController,
-          decoration: InputDecoration(
-            hintText: 'Search calls...',
-            hintStyle: TextStyle(
-              color: Colors.grey.shade500,
-            ),
-            prefixIcon: Icon(
-              Icons.search,
-              color: Colors.grey.shade600,
-            ),
-            border: InputBorder.none,
-            contentPadding:
-            const EdgeInsets.symmetric(
-              vertical: 18,
-            ),
-          ),
         ),
       ),
     );
   }
 
   // =========================================================
-  // CALL LIST
+  // SECTION
   // =========================================================
-  Widget _buildCallList() {
-    if (_filteredCalls.isEmpty) {
-      return _buildEmptyState();
-    }
-
-    final groupedCalls = _groupCalls();
-
-    return ListView(
-      padding:
-      const EdgeInsets.fromLTRB(20, 0, 20, 20),
-      children: groupedCalls.entries.map((entry) {
-        if (entry.value.isEmpty) {
-          return const SizedBox.shrink();
-        }
-
-        return Column(
-          crossAxisAlignment:
-          CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding:
-              const EdgeInsets.only(
-                top: 8,
-                bottom: 12,
-              ),
-              child: Text(
-                entry.key,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight:
-                  FontWeight.w600,
-                  color:
-                  Colors.grey.shade600,
-                ),
-              ),
+  Widget _buildSection(String title, List<CallModel> calls) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 14, top: 6),
+          child: Text(
+            title,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Colors.grey.shade700,
             ),
-            ...entry.value.map(
-                  (call) => _CallTile(
-                data: call,
-                onCall: () =>
-                    _callUser(call),
-              ),
-            ),
-          ],
-        );
-      }).toList(),
+          ),
+        ),
+        ...calls.map(_buildCallTile),
+      ],
     );
   }
 
@@ -322,13 +351,110 @@ class _CallsScreenState extends State<CallsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: background,
+
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: primary,
+        elevation: 8,
+        onPressed: () {
+          // Optional: Open contacts screen to start a new call
+        },
+        child: const Icon(
+          Icons.add_call,
+          color: Colors.white,
+        ),
+      ),
+
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(),
-            _buildSearchBar(),
+            // HEADER
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 18, 22, 0),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Calls',
+                      style: TextStyle(
+                        fontSize: 36,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: IconButton(
+                      onPressed: () {
+                        // Optional: open contacts
+                      },
+                      icon: const Icon(
+                        Icons.add_ic_call,
+                        color: primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // SEARCH
+            Padding(
+              padding: const EdgeInsets.all(22),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (value) {
+                    setState(() {
+                      _search = value.trim();
+                    });
+                  },
+                  decoration: const InputDecoration(
+                    hintText: 'Search calls...',
+                    prefixIcon: Icon(Icons.search),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(vertical: 18),
+                  ),
+                ),
+              ),
+            ),
+
+            // CALL HISTORY
             Expanded(
-              child: _buildCallList(),
+              child: StreamBuilder<List<CallModel>>(
+                stream: CallHistoryService.getCallHistory(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const Center(
+                      child: CircularProgressIndicator(
+                        color: primary,
+                      ),
+                    );
+                  }
+
+                  final allCalls = snapshot.data ?? [];
+                  final filteredCalls = _filterCalls(allCalls);
+
+                  if (filteredCalls.isEmpty) {
+                    return _buildEmptyState();
+                  }
+
+                  final grouped = _groupCalls(filteredCalls);
+
+                  return ListView(
+                    padding: const EdgeInsets.fromLTRB(22, 0, 22, 100),
+                    children: grouped.entries.map((entry) {
+                      return _buildSection(entry.key, entry.value);
+                    }).toList(),
+                  );
+                },
+              ),
             ),
           ],
         ),
@@ -341,234 +467,7 @@ class _CallsScreenState extends State<CallsScreen> {
   // =========================================================
   @override
   void dispose() {
-    _searchController
-        .removeListener(_filterCalls);
     _searchController.dispose();
     super.dispose();
   }
 }
-
-// =========================================================
-// CALL MODEL
-// =========================================================
-class CallModel {
-  final String name;
-  final String time;
-  final CallType type;
-  final bool video;
-
-  const CallModel({
-    required this.name,
-    required this.time,
-    required this.type,
-    this.video = false,
-  });
-}
-
-enum CallType {
-  incoming,
-  outgoing,
-  missed,
-}
-
-// =========================================================
-// CALL TILE
-// =========================================================
-class _CallTile extends StatelessWidget {
-  static const Color primary =
-  Color(0xFF6C5CE7);
-
-  final CallModel data;
-  final VoidCallback onCall;
-
-  const _CallTile({
-    required this.data,
-    required this.onCall,
-  });
-
-  (IconData, Color) _getStyle(
-      CallType type,
-      ) {
-    switch (type) {
-      case CallType.incoming:
-        return (
-        Icons.call_received,
-        Colors.green,
-        );
-      case CallType.outgoing:
-        return (
-        Icons.call_made,
-        Colors.blue,
-        );
-      case CallType.missed:
-        return (
-        Icons.call_missed,
-        Colors.red,
-        );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final (icon, color) =
-    _getStyle(data.type);
-
-    return Container(
-      margin:
-      const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius:
-        BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(10),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration:
-            const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [
-                  Color(0xFF7B61FF),
-                  Color(0xFF6C5CE7),
-                ],
-              ),
-            ),
-            child: Center(
-              child: Text(
-                data.name.isNotEmpty
-                    ? data.name[0]
-                    .toUpperCase()
-                    : '?',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight:
-                  FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment:
-              CrossAxisAlignment.start,
-              children: [
-                Text(
-                  data.name,
-                  style:
-                  const TextStyle(
-                    fontSize: 16,
-                    fontWeight:
-                    FontWeight.w600,
-                    color: Color(
-                      0xFF1E1E1E,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Row(
-                  children: [
-                    Icon(
-                      icon,
-                      size: 16,
-                      color: color,
-                    ),
-                    const SizedBox(
-                      width: 6,
-                    ),
-                    Expanded(
-                      child: Text(
-                        data.time,
-                        overflow:
-                        TextOverflow
-                            .ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors
-                              .grey
-                              .shade600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          InkWell(
-            onTap: onCall,
-            borderRadius:
-            BorderRadius.circular(
-              20,
-            ),
-            child: Container(
-              padding:
-              const EdgeInsets.all(
-                10,
-              ),
-              decoration: BoxDecoration(
-                color:
-                primary.withAlpha(
-                  26,
-                ),
-                shape:
-                BoxShape.circle,
-              ),
-              child: Icon(
-                data.video
-                    ? Icons.videocam
-                    : Icons.call,
-                color: primary,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// =========================================================
-// DUMMY CALL DATA
-// =========================================================
-const List<CallModel> _dummyCalls = [
-  CallModel(
-    name: 'Abel Sabu',
-    time: 'Today, 9:30 PM',
-    type: CallType.outgoing,
-  ),
-  CallModel(
-    name: 'Sahil',
-    time: 'Today, 7:15 PM',
-    type: CallType.incoming,
-    video: true,
-  ),
-  CallModel(
-    name: 'Jennifer',
-    time: 'Yesterday, 8:20 PM',
-    type: CallType.missed,
-  ),
-  CallModel(
-    name: 'Alex Roy',
-    time: 'Yesterday, 5:30 PM',
-    type: CallType.incoming,
-  ),
-  CallModel(
-    name: 'Natalie Nora',
-    time: 'Mar 28, 3:40 PM',
-    type: CallType.outgoing,
-    video: true,
-  ),
-];

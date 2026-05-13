@@ -4,53 +4,50 @@ import 'package:flutter/material.dart';
 import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
 
+import 'call_history_service.dart';
+import 'supabase_chat_service.dart';
+
 class ZegoCallService {
   // ===============================================================
   // ZEGO CONFIGURATION
   // ===============================================================
+
   static const int appID = 1302064610;
 
   static const String appSign =
       '58106cd5873417be720d8e2ceade88a850f9b0f2d09079b005236d878a915898';
 
-  /// IMPORTANT:
-  /// This temporary token is valid for 24 hours only.
-  /// When it expires, generate a new one from ZEGO Token Tools
-  /// and replace this value.
+  /// Replace this token whenever it expires.
   static const String token =
-      '04AAAAAGoFBcEADO7eABp7Fk8RntvREAC0yqjwGKfKg9lIE4pJf9UujAtn0b3n8EfxWAVrPB8h/kGYyC1JSwistdXlho3tj/i6OhoigmG9kMG5knHIy7YG+6Dzl7CKCbcV3/kwPUvORenmOhgofnvjxkbt0bKlu/XZ7zhr+Vx1pZoLvSQTGCrkvhtNZJU+eX6Frh+TgwDKk7Z9IEI/+EhtzyLIScORK9yfAEhNkMMPrgPDQN2L/W49EaPN+Y8PLMwM8teDBPg/zzUcOugNAQ==';
+      '04AAAAAGoFqMsADGYEeinZKQELmN9C3wCz71NcTSKHXLldVahjJXmNceGOVGb0aoJ4vMMhV6EMnLvTFwiXOj+eUdnIAU7/b7wlhst1+Z7BfiWMqwTA8mCtQTl93xAuY8ePteDwt2UjarMGejqZrCWUgV8ofUEdwRkro+zBn0d+T3TynvtHp+gjP7LclN+KMPAMz2q2/MChWKNSpjVOHR1pUkVJzvkaFOcrkjX3xoFuO9pnsU9BFBGMa1BDM78bN1vgozQxZ8Z+WPKlcSMB';
 
-  /// Must match the Resource ID configured in ZEGO Console.
+  /// Must match ZEGO Console Resource ID.
   static const String resourceID = 'zego_data';
 
   // ===============================================================
   // NAVIGATOR KEY
   // ===============================================================
+
   static final GlobalKey<NavigatorState> navigatorKey =
   GlobalKey<NavigatorState>();
 
   // ===============================================================
   // INTERNAL STATE
   // ===============================================================
+
   static bool _initialized = false;
   static String? _currentZegoUserID;
 
   // ===============================================================
-  // PUBLIC STATUS
+  // GETTERS
   // ===============================================================
+
   static bool get isInitialized => _initialized;
 
   // ===============================================================
-  // CONVERT USER ID TO ZEGO-SAFE ID
-  //
-  // Supabase UUID:
-  // 48a7e79a-2714-4700-812f-9a653e557928
-  //
-  // ZEGO-safe ID:
-  // u_48a7e79a
-  //
-  // ZEGO has a user ID length limit.
+  // CONVERT USER ID TO ZEGO SAFE USER ID
   // ===============================================================
+
   static String toZegoUserID(String userID) {
     final cleaned = userID.replaceAll('-', '').trim();
 
@@ -58,7 +55,6 @@ class ZegoCallService {
       throw Exception('User ID is empty.');
     }
 
-    // Use only the first 8 characters to stay within ZEGO limits.
     final shortID =
     cleaned.length >= 8 ? cleaned.substring(0, 8) : cleaned;
 
@@ -66,29 +62,30 @@ class ZegoCallService {
   }
 
   // ===============================================================
-  // REGISTER NAVIGATOR KEY
+  // REGISTER PLUGINS
   // ===============================================================
+
   static void registerPlugins() {
-    ZegoUIKitPrebuiltCallInvitationService().setNavigatorKey(
-      navigatorKey,
-    );
+    ZegoUIKitPrebuiltCallInvitationService()
+        .setNavigatorKey(navigatorKey);
   }
 
   // ===============================================================
   // INITIALIZE ZEGO
   // ===============================================================
+
   static Future<void> init({
     required String userID,
     required String userName,
   }) async {
     final zegoUserID = toZegoUserID(userID);
 
-    // Already initialized for same user
+    // Already initialized for this user
     if (_initialized && _currentZegoUserID == zegoUserID) {
       return;
     }
 
-    // Different user logged in -> reset
+    // Different user logged in
     if (_initialized && _currentZegoUserID != zegoUserID) {
       uninit();
     }
@@ -145,6 +142,7 @@ class ZegoCallService {
   // ===============================================================
   // UNINITIALIZE ZEGO
   // ===============================================================
+
   static void uninit() {
     if (!_initialized) {
       return;
@@ -163,6 +161,7 @@ class ZegoCallService {
   // ===============================================================
   // START VOICE CALL
   // ===============================================================
+
   static Future<void> startVoiceCall({
     required String targetUserID,
     required String targetUserName,
@@ -177,6 +176,7 @@ class ZegoCallService {
   // ===============================================================
   // START VIDEO CALL
   // ===============================================================
+
   static Future<void> startVideoCall({
     required String targetUserID,
     required String targetUserName,
@@ -189,8 +189,9 @@ class ZegoCallService {
   }
 
   // ===============================================================
-  // INTERNAL CALL METHOD
+  // INTERNAL START CALL METHOD
   // ===============================================================
+
   static Future<void> _startCall({
     required String targetUserID,
     required String targetUserName,
@@ -200,23 +201,29 @@ class ZegoCallService {
       throw Exception('ZegoCallService is not initialized.');
     }
 
-    if (targetUserID.trim().isEmpty) {
+    final trimmedTargetId = targetUserID.trim();
+
+    if (trimmedTargetId.isEmpty) {
       throw Exception('Target user ID is empty.');
     }
 
-    final zegoTargetUserID = toZegoUserID(targetUserID);
+    final zegoTargetUserID = toZegoUserID(trimmedTargetId);
 
     if (_currentZegoUserID == zegoTargetUserID) {
       throw Exception('You cannot call yourself.');
     }
 
-    // Give signaling a moment to ensure connection is established.
+    // Give ZEGO signaling some time to connect.
     await Future.delayed(const Duration(seconds: 3));
 
     developer.log(
       'Sending ${isVideo ? 'video' : 'voice'} call '
           'to $targetUserName ($zegoTargetUserID)',
     );
+
+    // ===========================================================
+    // SEND ZEGO CALL INVITATION
+    // ===========================================================
 
     await ZegoUIKitPrebuiltCallInvitationService().send(
       invitees: [
@@ -231,5 +238,50 @@ class ZegoCallService {
     );
 
     developer.log('Call invitation sent successfully.');
+
+    // ===========================================================
+    // SAVE TO CALLS TABLE (for Calls tab)
+    // ===========================================================
+
+    try {
+      await CallHistoryService.saveCall(
+        receiverId: trimmedTargetId,
+        callType: isVideo ? 'video' : 'voice',
+        status: 'completed',
+        durationSeconds: 0,
+      );
+
+      developer.log('Call record saved to calls table.');
+    } catch (e, stackTrace) {
+      developer.log(
+        'Failed to save call record to calls table.',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+
+    // ===========================================================
+    // SAVE TO MESSAGES TABLE (for chat call bubbles)
+    // ===========================================================
+
+    try {
+      await SupabaseChatService.sendMessage(
+        receiverId: trimmedTargetId,
+        content: isVideo
+            ? 'Outgoing video call'
+            : 'Outgoing voice call',
+        type: isVideo ? 'video_call' : 'call',
+        callStatus: 'completed',
+        callDuration: 0,
+      );
+
+      developer.log('Call message saved to messages table.');
+    } catch (e, stackTrace) {
+      developer.log(
+        'Failed to save call message to messages table.',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
   }
 }

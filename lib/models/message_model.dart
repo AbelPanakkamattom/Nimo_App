@@ -4,6 +4,10 @@ enum MessageType {
   audio,
   video,
   document,
+
+  // Calling
+  call,
+  videoCall,
 }
 
 enum MessageStatus {
@@ -15,6 +19,10 @@ enum MessageStatus {
 }
 
 class Message {
+  // =========================================================
+  // BASIC FIELDS
+  // =========================================================
+
   final String id;
   final String senderId;
   final String receiverId;
@@ -24,18 +32,40 @@ class Message {
   final MessageStatus status;
   final DateTime createdAt;
 
+  // =========================================================
+  // MEDIA
+  // =========================================================
+
   final String? mediaUrl;
   final String? originalFileName;
   final String? mimeType;
+  final String? thumbnailUrl;
+
+  // =========================================================
+  // FLAGS
+  // =========================================================
 
   final bool isDeleted;
   final bool isEdited;
   final bool isStarred;
   final bool isForwarded;
 
+  // =========================================================
+  // REPLY / REACTIONS
+  // =========================================================
+
   final String? replyToMessageId;
-  final String? thumbnailUrl;
   final Map<String, dynamic>? reactions;
+
+  // =========================================================
+  // CALL FIELDS
+  // =========================================================
+
+  /// completed / missed / rejected / cancelled
+  final String? callStatus;
+
+  /// duration in seconds
+  final int? callDuration;
 
   const Message({
     required this.id,
@@ -48,13 +78,15 @@ class Message {
     this.mediaUrl,
     this.originalFileName,
     this.mimeType,
+    this.thumbnailUrl,
     this.isDeleted = false,
     this.isEdited = false,
     this.isStarred = false,
     this.isForwarded = false,
     this.replyToMessageId,
-    this.thumbnailUrl,
     this.reactions,
+    this.callStatus,
+    this.callDuration,
   });
 
   // =========================================================
@@ -96,15 +128,17 @@ class Message {
       mediaUrl: resolvedMediaUrl,
       originalFileName: fileName,
       mimeType: mimeType,
+      thumbnailUrl: _cleanString(json['thumbnail_url']),
       isDeleted: json['deleted'] == true,
       isEdited: json['is_edited'] == true,
       isStarred: json['is_starred'] == true,
       isForwarded: json['is_forwarded'] == true,
       replyToMessageId: _cleanString(json['reply_to']),
-      thumbnailUrl: _cleanString(json['thumbnail_url']),
       reactions: json['reactions'] != null
           ? Map<String, dynamic>.from(json['reactions'])
           : null,
+      callStatus: _cleanString(json['call_status']),
+      callDuration: _parseInt(json['call_duration']),
     );
   }
 
@@ -122,13 +156,14 @@ class Message {
       )
           .toList();
 
-      // Remove duplicate IDs
       final unique = <String, Message>{};
+
       for (final message in messages) {
         unique[message.id] = message;
       }
 
       final result = unique.values.toList();
+
       result.sort(
             (a, b) => a.createdAt.compareTo(b.createdAt),
       );
@@ -149,71 +184,85 @@ class Message {
       'sender_id': senderId,
       'receiver_id': receiverId,
       'content': content,
-      'type': type.name,
+      'type': typeDbValue,
       'status': status.name,
       'created_at': createdAt.toUtc().toIso8601String(),
       'file_url': mediaUrl,
       'media_url': mediaUrl,
       'file_name': originalFileName,
       'mime_type': mimeType,
+      'thumbnail_url': thumbnailUrl,
       'deleted': isDeleted,
       'is_edited': isEdited,
       'is_starred': isStarred,
       'is_forwarded': isForwarded,
       'reply_to': replyToMessageId,
-      'thumbnail_url': thumbnailUrl,
       'reactions': reactions,
+      'call_status': callStatus,
+      'call_duration': callDuration,
     };
   }
 
   // =========================================================
-  // CONVENIENCE GETTERS
+  // DATABASE TYPE VALUE
   // =========================================================
 
-  bool isMe(String currentUserId) =>
-      senderId == currentUserId;
+  String get typeDbValue {
+    switch (type) {
+      case MessageType.videoCall:
+        return 'video_call';
+      case MessageType.call:
+        return 'call';
+      default:
+        return type.name;
+    }
+  }
 
-  bool get isText =>
-      type == MessageType.text;
+  // =========================================================
+  // BASIC GETTERS
+  // =========================================================
 
-  bool get isImage =>
-      type == MessageType.image;
+  bool isMe(String currentUserId) => senderId == currentUserId;
 
-  bool get isAudio =>
-      type == MessageType.audio;
+  bool get isText => type == MessageType.text;
 
-  bool get isVideo =>
-      type == MessageType.video;
+  bool get isImage => type == MessageType.image;
 
-  bool get isDocument =>
-      type == MessageType.document;
+  bool get isAudio => type == MessageType.audio;
 
-  bool get isSeen =>
-      status == MessageStatus.seen;
+  bool get isVideo => type == MessageType.video;
+
+  bool get isDocument => type == MessageType.document;
+
+  bool get isCall => type == MessageType.call;
+
+  bool get isVideoCall => type == MessageType.videoCall;
+
+  bool get isAnyCall => isCall || isVideoCall;
+
+  bool get isMissedCall => callStatus == 'missed';
+
+  bool get isSeen => status == MessageStatus.seen;
 
   bool get isDelivered =>
       status == MessageStatus.delivered ||
           status == MessageStatus.seen;
 
-  bool get isSending =>
-      status == MessageStatus.sending;
+  bool get isSending => status == MessageStatus.sending;
 
-  bool get isFailed =>
-      status == MessageStatus.failed;
+  bool get isFailed => status == MessageStatus.failed;
 
   bool get hasMedia =>
-      mediaUrl != null &&
-          mediaUrl!.trim().isNotEmpty;
+      mediaUrl != null && mediaUrl!.trim().isNotEmpty;
 
-  /// Always returns a non-null URL string.
-  String get resolvedUrl =>
-      mediaUrl ?? content;
+  String get resolvedUrl => mediaUrl ?? content;
 
-  /// Alias for compatibility.
-  String get fileUrl =>
-      resolvedUrl;
+  String get fileUrl => resolvedUrl;
 
-  /// Always returns a non-null file name.
+  // =========================================================
+  // FILE NAME
+  // =========================================================
+
   String get fileName {
     if (originalFileName != null &&
         originalFileName!.trim().isNotEmpty) {
@@ -233,47 +282,75 @@ class Message {
         return 'file';
       }
 
-      return Uri.decodeComponent(
-        uri.pathSegments.last,
-      );
+      return Uri.decodeComponent(uri.pathSegments.last);
     } catch (_) {
       return 'file';
     }
   }
 
-  /// Returns true if content is a normal URL.
+  // =========================================================
+  // LINK CHECK
+  // =========================================================
+
   bool get isLink {
     final value = content.trim();
 
-    final isHttp =
-        value.startsWith('http://') ||
-            value.startsWith('https://');
+    final isHttp = value.startsWith('http://') ||
+        value.startsWith('https://');
 
     if (!isHttp) return false;
 
     if (isImage ||
         isAudio ||
         isVideo ||
-        isDocument) {
+        isDocument ||
+        isAnyCall) {
       return false;
     }
 
     return true;
   }
 
-  /// Example: 7:45 PM
+  // =========================================================
+  // FORMATTED TIME
+  // =========================================================
+
   String get formattedTime {
     int hour = createdAt.hour % 12;
     if (hour == 0) hour = 12;
 
-    final minute = createdAt.minute
-        .toString()
-        .padLeft(2, '0');
+    final minute =
+    createdAt.minute.toString().padLeft(2, '0');
 
     final period =
     createdAt.hour >= 12 ? 'PM' : 'AM';
 
     return '$hour:$minute $period';
+  }
+
+  // =========================================================
+  // CALL DESCRIPTION
+  // =========================================================
+
+  String callDescription(String currentUserId) {
+    final outgoing = isMe(currentUserId);
+    final video = isVideoCall;
+
+    if (isMissedCall) {
+      return video
+          ? 'Missed video call'
+          : 'Missed voice call';
+    }
+
+    if (outgoing) {
+      return video
+          ? 'You started a video call'
+          : 'You started a voice call';
+    }
+
+    return video
+        ? 'Incoming video call'
+        : 'Incoming voice call';
   }
 
   // =========================================================
@@ -291,56 +368,43 @@ class Message {
     String? mediaUrl,
     String? originalFileName,
     String? mimeType,
+    String? thumbnailUrl,
     bool? isDeleted,
     bool? isEdited,
     bool? isStarred,
     bool? isForwarded,
     String? replyToMessageId,
-    String? thumbnailUrl,
     Map<String, dynamic>? reactions,
+    String? callStatus,
+    int? callDuration,
   }) {
     return Message(
       id: id ?? this.id,
-      senderId:
-      senderId ?? this.senderId,
-      receiverId:
-      receiverId ?? this.receiverId,
-      content:
-      content ?? this.content,
+      senderId: senderId ?? this.senderId,
+      receiverId: receiverId ?? this.receiverId,
+      content: content ?? this.content,
       type: type ?? this.type,
-      status:
-      status ?? this.status,
-      createdAt:
-      createdAt ?? this.createdAt,
-      mediaUrl:
-      mediaUrl ?? this.mediaUrl,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      mediaUrl: mediaUrl ?? this.mediaUrl,
       originalFileName:
-      originalFileName ??
-          this.originalFileName,
-      mimeType:
-      mimeType ?? this.mimeType,
-      isDeleted:
-      isDeleted ?? this.isDeleted,
-      isEdited:
-      isEdited ?? this.isEdited,
-      isStarred:
-      isStarred ?? this.isStarred,
-      isForwarded:
-      isForwarded ??
-          this.isForwarded,
+      originalFileName ?? this.originalFileName,
+      mimeType: mimeType ?? this.mimeType,
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      isDeleted: isDeleted ?? this.isDeleted,
+      isEdited: isEdited ?? this.isEdited,
+      isStarred: isStarred ?? this.isStarred,
+      isForwarded: isForwarded ?? this.isForwarded,
       replyToMessageId:
-      replyToMessageId ??
-          this.replyToMessageId,
-      thumbnailUrl:
-      thumbnailUrl ??
-          this.thumbnailUrl,
-      reactions:
-      reactions ?? this.reactions,
+      replyToMessageId ?? this.replyToMessageId,
+      reactions: reactions ?? this.reactions,
+      callStatus: callStatus ?? this.callStatus,
+      callDuration: callDuration ?? this.callDuration,
     );
   }
 
   // =========================================================
-  // INTERNAL HELPERS
+  // TYPE PARSER
   // =========================================================
 
   static MessageType _parseType(
@@ -349,23 +413,30 @@ class Message {
         required String source,
       }) {
     final type =
-        value?.toString().toLowerCase().trim() ??
-            '';
+        value?.toString().toLowerCase().trim() ?? '';
 
     switch (type) {
+      case 'call':
+        return MessageType.call;
+
+      case 'video_call':
+        return MessageType.videoCall;
+
       case 'image':
         return MessageType.image;
+
       case 'audio':
         return MessageType.audio;
+
       case 'video':
         return MessageType.video;
+
       case 'document':
       case 'file':
         return MessageType.document;
     }
 
-    final mime =
-        mimeType?.toLowerCase() ?? '';
+    final mime = mimeType?.toLowerCase() ?? '';
 
     if (mime.startsWith('image/')) {
       return MessageType.image;
@@ -448,6 +519,10 @@ class Message {
     return MessageType.text;
   }
 
+  // =========================================================
+  // STATUS PARSER
+  // =========================================================
+
   static MessageStatus _parseStatus(
       dynamic value, {
         bool isSeen = false,
@@ -456,9 +531,7 @@ class Message {
       return MessageStatus.seen;
     }
 
-    switch (value
-        ?.toString()
-        .toLowerCase()) {
+    switch (value?.toString().toLowerCase()) {
       case 'sending':
         return MessageStatus.sending;
       case 'sent':
@@ -475,61 +548,48 @@ class Message {
     }
   }
 
-  static DateTime _parseDate(
-      dynamic value,
-      ) {
-    if (value == null) {
-      return DateTime.now();
-    }
+  // =========================================================
+  // HELPERS
+  // =========================================================
+
+  static DateTime _parseDate(dynamic value) {
+    if (value == null) return DateTime.now();
 
     try {
-      return DateTime.parse(
-        value.toString(),
-      ).toLocal();
+      return DateTime.parse(value.toString()).toLocal();
     } catch (_) {
       return DateTime.now();
     }
   }
 
-  static String? _cleanString(
-      dynamic value,
-      ) {
-    if (value == null) {
-      return null;
-    }
+  static String? _cleanString(dynamic value) {
+    if (value == null) return null;
 
-    final text =
-    value.toString().trim();
+    final text = value.toString().trim();
 
-    if (text.isEmpty ||
-        text.toLowerCase() == 'null') {
+    if (text.isEmpty || text.toLowerCase() == 'null') {
       return null;
     }
 
     return text;
   }
 
-  static String _extractExtension(
-      String value,
-      ) {
+  static int? _parseInt(dynamic value) {
+    if (value == null) return null;
+    return int.tryParse(value.toString());
+  }
+
+  static String _extractExtension(String value) {
     try {
       final uri = Uri.parse(value);
-      final path =
-      uri.path.toLowerCase();
+      final path = uri.path.toLowerCase();
 
-      if (!path.contains('.')) {
-        return '';
-      }
-
+      if (!path.contains('.')) return '';
       return path.split('.').last;
     } catch (_) {
-      final lower =
-      value.toLowerCase();
+      final lower = value.toLowerCase();
 
-      if (!lower.contains('.')) {
-        return '';
-      }
-
+      if (!lower.contains('.')) return '';
       return lower.split('.').last;
     }
   }
@@ -541,8 +601,7 @@ class Message {
   @override
   bool operator ==(Object other) {
     return identical(this, other) ||
-        other is Message &&
-            other.id == id;
+        other is Message && other.id == id;
   }
 
   @override
@@ -557,7 +616,7 @@ Message(
   receiverId: $receiverId,
   content: $content,
   type: ${type.name},
-  status: ${status.name},
+  callStatus: $callStatus,
   createdAt: $createdAt
 )
 ''';
