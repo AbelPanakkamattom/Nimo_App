@@ -41,6 +41,9 @@ class CallModel {
   factory CallModel.fromJson(
       Map<String, dynamic> json,
       ) {
+    // -------------------------------------------------------
+    // Avatar
+    // -------------------------------------------------------
     String avatar =
     (json['other_user_avatar'] ??
         json['avatar_url'] ??
@@ -52,6 +55,97 @@ class CallModel {
       avatar = '';
     }
 
+    // -------------------------------------------------------
+    // Normalize call type
+    // Supports:
+    // - voice
+    // - video
+    // - call
+    // - video_call
+    // -------------------------------------------------------
+    String rawType =
+    (json['call_type'] ??
+        json['type'] ??
+        'voice')
+        .toString()
+        .toLowerCase()
+        .trim();
+
+    String normalizedType;
+
+    if (rawType == 'video' ||
+        rawType == 'video_call') {
+      normalizedType = 'video';
+    } else {
+      normalizedType = 'voice';
+    }
+
+    // -------------------------------------------------------
+    // Normalize direction
+    // -------------------------------------------------------
+    final direction =
+    (json['direction'] ?? 'outgoing')
+        .toString()
+        .toLowerCase()
+        .trim();
+
+    // -------------------------------------------------------
+    // Normalize status
+    // -------------------------------------------------------
+    final status =
+    (json['status'] ?? 'completed')
+        .toString()
+        .toLowerCase()
+        .trim();
+
+    // -------------------------------------------------------
+    // Duration
+    // Supports:
+    // - duration_seconds
+    // - call_duration
+    // -------------------------------------------------------
+    int duration = 0;
+
+    final durationValue =
+        json['duration_seconds'] ??
+            json['call_duration'];
+
+    if (durationValue is num) {
+      duration = durationValue.toInt();
+    } else if (durationValue != null) {
+      duration =
+          int.tryParse(
+            durationValue.toString(),
+          ) ??
+              0;
+    }
+
+    // -------------------------------------------------------
+    // Name
+    // -------------------------------------------------------
+    String name =
+    (json['other_user_name'] ??
+        json['name'] ??
+        json['full_name'] ??
+        json['display_name'] ??
+        json['username'] ??
+        'Unknown User')
+        .toString()
+        .trim();
+
+    if (name.isEmpty) {
+      name = 'Unknown User';
+    }
+
+    // -------------------------------------------------------
+    // Other user ID
+    // -------------------------------------------------------
+    final otherUserId =
+    (json['other_user_id'] ??
+        json['receiver_id'] ??
+        '')
+        .toString();
+
     return CallModel(
       id: (json['id'] ?? '').toString(),
 
@@ -61,36 +155,22 @@ class CallModel {
       receiverId:
       (json['receiver_id'] ?? '').toString(),
 
-      callType:
-      (json['call_type'] ?? 'voice')
-          .toString(),
+      callType: normalizedType,
 
-      direction:
-      (json['direction'] ??
-          'outgoing')
-          .toString(),
+      direction: direction,
 
-      status:
-      (json['status'] ??
-          'completed')
-          .toString(),
+      status: status,
 
-      durationSeconds:
-      (json['duration_seconds']
-      as num?)
-          ?.toInt() ??
-          0,
+      durationSeconds: duration,
 
-      startedAt:
-      json['started_at'] != null
+      startedAt: json['started_at'] != null
           ? DateTime.tryParse(
         json['started_at']
             .toString(),
       )
           : null,
 
-      endedAt:
-      json['ended_at'] != null
+      endedAt: json['ended_at'] != null
           ? DateTime.tryParse(
         json['ended_at']
             .toString(),
@@ -99,25 +179,14 @@ class CallModel {
 
       createdAt:
       DateTime.tryParse(
-        (json['created_at'] ??
-            '')
+        (json['created_at'] ?? '')
             .toString(),
       ) ??
           DateTime.now(),
 
-      // UI fields
-      otherUserId:
-      (json['other_user_id'] ??
-          json['receiver_id'] ??
-          '')
-          .toString(),
+      otherUserId: otherUserId,
 
-      otherUserName:
-      (json['other_user_name'] ??
-          json['name'] ??
-          json['full_name'] ??
-          'Unknown User')
-          .toString(),
+      otherUserName: name,
 
       otherUserAvatar:
       avatar.isEmpty ? null : avatar,
@@ -158,6 +227,10 @@ class CallModel {
 
   bool get isVideoCall =>
       callType.toLowerCase() == 'video';
+
+  // Legacy compatibility
+  String get type =>
+      isVideoCall ? 'video_call' : 'call';
 
   // =========================================================
   // DIRECTION HELPERS
@@ -206,10 +279,8 @@ class CallModel {
 
     final hours =
         durationSeconds ~/ 3600;
-
     final minutes =
         (durationSeconds % 3600) ~/ 60;
-
     final seconds =
         durationSeconds % 60;
 
@@ -279,8 +350,7 @@ class CallModel {
       callerId:
       callerId ?? this.callerId,
       receiverId:
-      receiverId ??
-          this.receiverId,
+      receiverId ?? this.receiverId,
       callType:
       callType ?? this.callType,
       direction:

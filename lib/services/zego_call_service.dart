@@ -8,6 +8,8 @@ import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
 import 'supabase_chat_service.dart';
 
 class ZegoCallService {
+  ZegoCallService._();
+
   // ==========================================================
   // ZEGO CONFIGURATION
   // ==========================================================
@@ -26,12 +28,11 @@ class ZegoCallService {
   // NAVIGATOR KEY
   // ==========================================================
 
-  static final GlobalKey<NavigatorState>
-  navigatorKey =
+  static final GlobalKey<NavigatorState> navigatorKey =
   GlobalKey<NavigatorState>();
 
   // ==========================================================
-  // STATE
+  // INTERNAL STATE
   // ==========================================================
 
   static bool _initialized = false;
@@ -40,24 +41,19 @@ class ZegoCallService {
   static String? _targetUserId;
   static bool _isVideoCall = false;
   static DateTime? _callStartTime;
-
-  // Prevent duplicate save operations
   static bool _callFinalized = false;
 
   // ==========================================================
-  // GETTERS
+  // PUBLIC GETTER (FIXES YOUR ERROR)
   // ==========================================================
 
-  static bool get isInitialized =>
-      _initialized;
+  static bool get isInitialized => _initialized;
 
   // ==========================================================
   // CONVERT UUID TO ZEGO SAFE ID
   // ==========================================================
 
-  static String toZegoUserID(
-      String userID,
-      ) {
+  static String toZegoUserID(String userID) {
     final cleaned =
     userID.replaceAll('-', '').trim();
 
@@ -65,8 +61,7 @@ class ZegoCallService {
       throw Exception('User ID is empty');
     }
 
-    final shortID =
-    cleaned.length >= 8
+    final shortID = cleaned.length >= 8
         ? cleaned.substring(0, 8)
         : cleaned;
 
@@ -79,13 +74,11 @@ class ZegoCallService {
 
   static void registerPlugins() {
     ZegoUIKitPrebuiltCallInvitationService()
-        .setNavigatorKey(
-      navigatorKey,
-    );
+        .setNavigatorKey(navigatorKey);
   }
 
   // ==========================================================
-  // INITIALIZE
+  // INITIALIZE ZEGO
   // ==========================================================
 
   static Future<void> init({
@@ -96,113 +89,94 @@ class ZegoCallService {
     toZegoUserID(userID);
 
     if (_initialized &&
-        _currentZegoUserID ==
-            zegoUserID) {
+        _currentZegoUserID == zegoUserID) {
       return;
     }
 
     if (_initialized &&
-        _currentZegoUserID !=
-            zegoUserID) {
+        _currentZegoUserID != zegoUserID) {
       uninit();
     }
 
-    try {
-      registerPlugins();
+    registerPlugins();
 
-      await ZegoUIKitPrebuiltCallInvitationService()
-          .init(
-        appID: appID,
-        appSign: appSign,
-        userID: zegoUserID,
-        userName: userName,
-        token: token,
-        plugins: [
-          ZegoUIKitSignalingPlugin(),
-        ],
-        events:
-        ZegoUIKitPrebuiltCallEvents(
-          onCallEnd: (
-              ZegoCallEndEvent event,
-              VoidCallback defaultAction,
-              ) async {
-            try {
-              await _completeCurrentCall();
-            } catch (e) {
-              developer.log(
-                'Error saving completed call',
-                error: e,
-              );
-            }
+    await ZegoUIKitPrebuiltCallInvitationService()
+        .init(
+      appID: appID,
+      appSign: appSign,
+      userID: zegoUserID,
+      userName: userName,
+      token: token,
+      plugins: [
+        ZegoUIKitSignalingPlugin(),
+      ],
+      events:
+      ZegoUIKitPrebuiltCallEvents(
+        onCallEnd: (
+            ZegoCallEndEvent event,
+            VoidCallback defaultAction,
+            ) async {
+          try {
+            await _completeCurrentCall();
+          } catch (e) {
+            developer.log(
+              'Complete call error',
+              error: e,
+            );
+          }
 
-            defaultAction();
-          },
-        ),
-        invitationEvents:
-        ZegoUIKitPrebuiltCallInvitationEvents(
-          onOutgoingCallTimeout: (
-              String callID,
-              List<ZegoCallUser> callees,
-              bool isVideoCall,
-              ) async {
-            await _markMissed();
-          },
-          onOutgoingCallDeclined: (
-              String callID,
-              ZegoCallUser callee,
-              String reason,
-              ) async {
-            await _markRejected();
-          },
-          onIncomingCallTimeout: (
-              String callID,
-              ZegoCallUser caller,
-              ) async {
-            await _markMissed();
-          },
-        ),
-        requireConfig: (
-            ZegoCallInvitationData data,
-            ) {
-          final isVideo =
-              data.type ==
-                  ZegoCallInvitationType
-                      .videoCall;
-
-          final config = isVideo
-              ? ZegoUIKitPrebuiltCallConfig
-              .oneOnOneVideoCall()
-              : ZegoUIKitPrebuiltCallConfig
-              .oneOnOneVoiceCall();
-
-          config.turnOnCameraWhenJoining =
-              isVideo;
-          config.turnOnMicrophoneWhenJoining =
-          true;
-
-          return config;
+          defaultAction();
         },
-      );
+      ),
+      invitationEvents:
+      ZegoUIKitPrebuiltCallInvitationEvents(
+        onOutgoingCallTimeout: (
+            String callID,
+            List<ZegoCallUser> callees,
+            bool isVideoCall,
+            ) async {
+          await _markMissed();
+        },
+        onOutgoingCallDeclined: (
+            String callID,
+            ZegoCallUser callee,
+            String reason,
+            ) async {
+          await _markRejected();
+        },
+        onIncomingCallTimeout: (
+            String callID,
+            ZegoCallUser caller,
+            ) async {
+          await _markMissed();
+        },
+      ),
+      requireConfig: (
+          ZegoCallInvitationData data,
+          ) {
+        final isVideo =
+            data.type ==
+                ZegoCallInvitationType
+                    .videoCall;
 
-      _initialized = true;
-      _currentZegoUserID =
-          zegoUserID;
+        final config = isVideo
+            ? ZegoUIKitPrebuiltCallConfig
+            .oneOnOneVideoCall()
+            : ZegoUIKitPrebuiltCallConfig
+            .oneOnOneVoiceCall();
 
-      developer.log(
-        'ZEGO initialized successfully',
-      );
-    } catch (e, stackTrace) {
-      _initialized = false;
-      _currentZegoUserID = null;
+        config.turnOnCameraWhenJoining =
+            isVideo;
+        config.turnOnMicrophoneWhenJoining =
+        true;
 
-      developer.log(
-        'ZEGO initialization failed',
-        error: e,
-        stackTrace: stackTrace,
-      );
+        return config;
+      },
+    );
 
-      rethrow;
-    }
+    _initialized = true;
+    _currentZegoUserID =
+        zegoUserID;
   }
 
   // ==========================================================
@@ -221,6 +195,7 @@ class ZegoCallService {
 
     _initialized = false;
     _currentZegoUserID = null;
+
     _resetCurrentCall();
   }
 
@@ -267,67 +242,48 @@ class ZegoCallService {
   }) async {
     if (!_initialized) {
       throw Exception(
-        'ZegoCallService is not initialized',
+        'ZegoCallService is not initialized.',
       );
     }
 
-    final trimmedTargetId =
+    final target =
     targetUserID.trim();
 
-    if (trimmedTargetId.isEmpty) {
+    if (target.isEmpty) {
       throw Exception(
-        'Target user ID is empty',
+        'Target user ID is empty.',
       );
     }
 
-    final zegoTargetUserID =
-    toZegoUserID(
-      trimmedTargetId,
-    );
+    final zegoTarget =
+    toZegoUserID(target);
 
     if (_currentZegoUserID ==
-        zegoTargetUserID) {
+        zegoTarget) {
       throw Exception(
-        'You cannot call yourself',
+        'You cannot call yourself.',
       );
     }
 
     _resetCurrentCall();
 
-    _targetUserId =
-        trimmedTargetId;
+    _targetUserId = target;
     _isVideoCall = isVideo;
     _callStartTime =
         DateTime.now();
     _callFinalized = false;
 
-    // Show call bubble immediately
-    await _saveChatMessage(
-      status: 'ringing',
-      durationSeconds: 0,
-    );
-
-    await Future.delayed(
-      const Duration(
-        milliseconds: 500,
-      ),
-    );
-
     await ZegoUIKitPrebuiltCallInvitationService()
         .send(
       invitees: [
         ZegoCallUser(
-          zegoTargetUserID,
+          zegoTarget,
           targetUserName,
         ),
       ],
       isVideoCall: isVideo,
       resourceID: resourceID,
       timeoutSeconds: 60,
-    );
-
-    developer.log(
-      'Call invitation sent',
     );
   }
 
@@ -344,7 +300,7 @@ class ZegoCallService {
 
     _callFinalized = true;
 
-    final durationSeconds =
+    final duration =
     _callStartTime == null
         ? 0
         : DateTime.now()
@@ -355,18 +311,12 @@ class ZegoCallService {
 
     await _saveCallRecord(
       status: 'completed',
-      durationSeconds:
-      durationSeconds,
+      durationSeconds: duration,
     );
 
     await _saveChatMessage(
       status: 'completed',
-      durationSeconds:
-      durationSeconds,
-    );
-
-    developer.log(
-      'Call completed: $durationSeconds sec',
+      durationSeconds: duration,
     );
 
     _resetCurrentCall();
@@ -394,8 +344,6 @@ class ZegoCallService {
       durationSeconds: 0,
     );
 
-    developer.log('Call missed');
-
     _resetCurrentCall();
   }
 
@@ -422,13 +370,11 @@ class ZegoCallService {
       durationSeconds: 0,
     );
 
-    developer.log('Call rejected');
-
     _resetCurrentCall();
   }
 
   // ==========================================================
-  // SAVE CALL RECORD
+  // SAVE TO calls TABLE
   // ==========================================================
 
   static Future<void> _saveCallRecord({
@@ -439,44 +385,46 @@ class ZegoCallService {
       return;
     }
 
-    final supabase =
-        Supabase.instance.client;
-
     final currentUser =
-        supabase.auth.currentUser;
+        Supabase.instance.client.auth.currentUser;
 
     if (currentUser == null) {
       return;
     }
 
-    final callerId =
-        currentUser.id;
-    final receiverId =
-    _targetUserId!;
-
-    final callType =
-    _isVideoCall
-        ? 'video'
-        : 'voice';
-
-    await supabase
+    await Supabase.instance.client
         .from('calls')
         .insert({
-      'caller_id': callerId,
-      'receiver_id': receiverId,
-      'call_type': callType,
+      'caller_id': currentUser.id,
+      'receiver_id':
+      _targetUserId!,
+      'call_type':
+      _isVideoCall
+          ? 'video'
+          : 'voice',
+      'direction':
+      'outgoing',
       'status': status,
       'duration_seconds':
       durationSeconds,
+      'started_at':
+      (_callStartTime ??
+          DateTime.now())
+          .toUtc()
+          .toIso8601String(),
+      'ended_at':
+      DateTime.now()
+          .toUtc()
+          .toIso8601String(),
+      'created_at':
+      DateTime.now()
+          .toUtc()
+          .toIso8601String(),
     });
-
-    developer.log(
-      'Call record saved',
-    );
   }
 
   // ==========================================================
-  // SAVE CHAT MESSAGE
+  // SAVE TO messages TABLE
   // ==========================================================
 
   static Future<void> _saveChatMessage({
@@ -487,27 +435,9 @@ class ZegoCallService {
       return;
     }
 
-    String content;
-
-    if (status == 'missed') {
-      content = _isVideoCall
-          ? 'Missed video call'
-          : 'Missed voice call';
-    } else if (status ==
-        'rejected') {
-      content = _isVideoCall
-          ? 'Rejected video call'
-          : 'Rejected voice call';
-    } else if (status ==
-        'completed') {
-      content = _isVideoCall
-          ? 'Completed video call'
-          : 'Completed voice call';
-    } else {
-      content = _isVideoCall
-          ? 'Outgoing video call'
-          : 'Outgoing voice call';
-    }
+    final content = _isVideoCall
+        ? 'Video call'
+        : 'Voice call';
 
     await SupabaseChatService
         .sendMessage(
@@ -524,7 +454,7 @@ class ZegoCallService {
   }
 
   // ==========================================================
-  // RESET CURRENT CALL
+  // RESET STATE
   // ==========================================================
 
   static void _resetCurrentCall() {

@@ -22,7 +22,9 @@ class ChatMessageList extends StatelessWidget {
   // =========================================================
 
   Widget _buildMessage(Message message) {
-    // Special UI for voice/video calls
+    // -------------------------------------------------------
+    // Special UI for call and video call messages
+    // -------------------------------------------------------
     if (message.isAnyCall) {
       return CallMessageBubble(
         message: message,
@@ -30,41 +32,57 @@ class ChatMessageList extends StatelessWidget {
       );
     }
 
+    // -------------------------------------------------------
+    // Current user?
+    // -------------------------------------------------------
     final isMe =
         message.senderId == currentUserId;
 
-    final mediaUrl =
-        message.mediaUrl ?? '';
-
-    final displayMessage =
-    message.type ==
-        MessageType.text
+    // -------------------------------------------------------
+    // Use media URL for media messages
+    // Use text content for text messages
+    // -------------------------------------------------------
+    final displayValue = message.isText
         ? message.content
-        : (mediaUrl.isNotEmpty
-        ? mediaUrl
-        : message.content);
+        : message.resolvedUrl;
 
+    // -------------------------------------------------------
+    // Build standard message bubble
+    // -------------------------------------------------------
     return MessageBubble(
-      message: displayMessage,
-      time:
-      DateTimeFormatter.formatChatTime(
+      message: displayValue,
+      time: DateTimeFormatter.formatChatTime(
         message.createdAt,
       ),
       isMe: isMe,
-      isImage:
-      message.type ==
-          MessageType.image,
-      isAudio:
-      message.type ==
-          MessageType.audio,
-      isDocument:
-      message.type ==
-          MessageType.document,
-      isVideo:
-      message.type ==
-          MessageType.video,
+
+      // Media flags
+      isImage: message.isImage,
+      isAudio: message.isAudio,
+      isVideo: message.isVideo,
+      isDocument: message.isDocument,
+
+      // Message status
       status: message.status.name,
+
+      // File metadata
       fileName: message.fileName,
+    );
+  }
+
+  // =========================================================
+  // EMPTY STATE
+  // =========================================================
+
+  Widget _buildEmptyState() {
+    return const Center(
+      child: Text(
+        'No messages yet',
+        style: TextStyle(
+          fontSize: 16,
+          color: Colors.grey,
+        ),
+      ),
     );
   }
 
@@ -75,27 +93,18 @@ class ChatMessageList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (messages.isEmpty) {
-      return const Center(
-        child: Text(
-          'No messages yet',
-        ),
-      );
+      return _buildEmptyState();
     }
 
     return ListView.builder(
       controller: scrollController,
       padding: const EdgeInsets.all(14),
       keyboardDismissBehavior:
-      ScrollViewKeyboardDismissBehavior
-          .onDrag,
+      ScrollViewKeyboardDismissBehavior.onDrag,
       itemCount: messages.length,
-      itemBuilder: (
-          context,
-          index,
-          ) {
-        return _buildMessage(
-          messages[index],
-        );
+      itemBuilder: (context, index) {
+        final message = messages[index];
+        return _buildMessage(message);
       },
     );
   }

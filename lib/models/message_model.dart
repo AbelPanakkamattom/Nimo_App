@@ -5,7 +5,7 @@ enum MessageType {
   video,
   document,
 
-  // Calling
+  // Calls
   call,
   videoCall,
 }
@@ -61,11 +61,8 @@ class Message {
   // CALL FIELDS
   // =========================================================
 
-  /// completed / missed / rejected / cancelled
-  final String? callStatus;
-
-  /// duration in seconds
-  final int? callDuration;
+  final String? callStatus; // completed / missed / rejected
+  final int? callDuration; // seconds
 
   const Message({
     required this.id,
@@ -93,52 +90,110 @@ class Message {
   // FROM JSON
   // =========================================================
 
-  factory Message.fromJson(Map<String, dynamic> json) {
-    final id = json['id']?.toString() ??
-        DateTime.now().millisecondsSinceEpoch.toString();
+  factory Message.fromJson(
+      Map<String, dynamic> json,
+      ) {
+    final id =
+        json['id']?.toString() ??
+            DateTime.now()
+                .millisecondsSinceEpoch
+                .toString();
 
-    final content = _cleanString(json['content']) ?? '';
+    final content =
+        _cleanString(
+          json['content'],
+        ) ??
+            '';
 
-    final fileUrl = _cleanString(json['file_url']);
-    final mediaUrl = _cleanString(json['media_url']);
-    final resolvedMediaUrl = fileUrl ?? mediaUrl;
+    // Accept both file_url and media_url
+    final fileUrl =
+    _cleanString(json['file_url']);
+    final mediaUrl =
+    _cleanString(json['media_url']);
+    final resolvedMediaUrl =
+        fileUrl ?? mediaUrl;
 
-    final fileName = _cleanString(json['file_name']);
-    final mimeType = _cleanString(json['mime_type']);
+    final fileName =
+    _cleanString(json['file_name']);
+    final mimeType =
+    _cleanString(json['mime_type']);
 
-    final messageType = _parseType(
-      json['type'] ?? json['message_type'],
+    final messageType =
+    _parseType(
+      json['type'] ??
+          json['message_type'],
       mimeType: mimeType,
-      source: resolvedMediaUrl ?? content,
+      source:
+      resolvedMediaUrl ??
+          content,
     );
 
-    final messageStatus = _parseStatus(
+    final messageStatus =
+    _parseStatus(
       json['status'],
-      isSeen: json['is_seen'] == true,
+      isSeen:
+      json['is_seen'] == true,
     );
 
     return Message(
       id: id,
-      senderId: json['sender_id']?.toString() ?? '',
-      receiverId: json['receiver_id']?.toString() ?? '',
-      content: content.isNotEmpty ? content : (fileName ?? ''),
+      senderId:
+      json['sender_id']
+          ?.toString() ??
+          '',
+      receiverId:
+      json['receiver_id']
+          ?.toString() ??
+          '',
+      content: content.isNotEmpty
+          ? content
+          : (fileName ?? ''),
       type: messageType,
       status: messageStatus,
-      createdAt: _parseDate(json['created_at']),
-      mediaUrl: resolvedMediaUrl,
-      originalFileName: fileName,
+      createdAt: _parseDate(
+        json['created_at'],
+      ),
+      mediaUrl:
+      resolvedMediaUrl,
+      originalFileName:
+      fileName,
       mimeType: mimeType,
-      thumbnailUrl: _cleanString(json['thumbnail_url']),
-      isDeleted: json['deleted'] == true,
-      isEdited: json['is_edited'] == true,
-      isStarred: json['is_starred'] == true,
-      isForwarded: json['is_forwarded'] == true,
-      replyToMessageId: _cleanString(json['reply_to']),
-      reactions: json['reactions'] != null
-          ? Map<String, dynamic>.from(json['reactions'])
+      thumbnailUrl:
+      _cleanString(
+        json['thumbnail_url'],
+      ),
+      isDeleted:
+      json['deleted'] ==
+          true,
+      isEdited:
+      json['is_edited'] ==
+          true,
+      isStarred:
+      json['is_starred'] ==
+          true,
+      isForwarded:
+      json['is_forwarded'] ==
+          true,
+      replyToMessageId:
+      _cleanString(
+        json['reply_to'],
+      ),
+      reactions:
+      json['reactions'] !=
+          null
+          ? Map<String,
+          dynamic>.from(
+        json['reactions'],
+      )
           : null,
-      callStatus: _cleanString(json['call_status']),
-      callDuration: _parseInt(json['call_duration']),
+      callStatus:
+      _cleanString(
+        json['call_status'],
+      ),
+      callDuration:
+      _parseInt(
+        json['call_duration'],
+      ),
     );
   }
 
@@ -146,26 +201,42 @@ class Message {
   // FROM LIST
   // =========================================================
 
-  static List<Message> fromList(List<dynamic> data) {
+  static List<Message> fromList(
+      List<dynamic> data,
+      ) {
     try {
-      final messages = data
+      final messages =
+      data
           .map(
-            (item) => Message.fromJson(
-          Map<String, dynamic>.from(item),
-        ),
+            (item) =>
+            Message.fromJson(
+              Map<String,
+                  dynamic>.from(
+                item,
+              ),
+            ),
       )
           .toList();
 
-      final unique = <String, Message>{};
+      // Remove duplicates by id
+      final unique =
+      <String, Message>{};
 
-      for (final message in messages) {
-        unique[message.id] = message;
+      for (final message
+      in messages) {
+        unique[message.id] =
+            message;
       }
 
-      final result = unique.values.toList();
+      final result =
+      unique.values.toList();
 
+      // Sort oldest -> newest
       result.sort(
-            (a, b) => a.createdAt.compareTo(b.createdAt),
+            (a, b) => a.createdAt
+            .compareTo(
+          b.createdAt,
+        ),
       );
 
       return result;
@@ -185,21 +256,31 @@ class Message {
       'receiver_id': receiverId,
       'content': content,
       'type': typeDbValue,
+      'message_type':
+      typeDbValue,
       'status': status.name,
-      'created_at': createdAt.toUtc().toIso8601String(),
+      'created_at': createdAt
+          .toUtc()
+          .toIso8601String(),
       'file_url': mediaUrl,
       'media_url': mediaUrl,
-      'file_name': originalFileName,
+      'file_name':
+      originalFileName,
       'mime_type': mimeType,
-      'thumbnail_url': thumbnailUrl,
+      'thumbnail_url':
+      thumbnailUrl,
       'deleted': isDeleted,
       'is_edited': isEdited,
       'is_starred': isStarred,
-      'is_forwarded': isForwarded,
-      'reply_to': replyToMessageId,
+      'is_forwarded':
+      isForwarded,
+      'reply_to':
+      replyToMessageId,
       'reactions': reactions,
-      'call_status': callStatus,
-      'call_duration': callDuration,
+      'call_status':
+      callStatus,
+      'call_duration':
+      callDuration,
     };
   }
 
@@ -222,67 +303,116 @@ class Message {
   // BASIC GETTERS
   // =========================================================
 
-  bool isMe(String currentUserId) => senderId == currentUserId;
+  bool isMe(
+      String currentUserId,
+      ) {
+    return senderId ==
+        currentUserId;
+  }
 
-  bool get isText => type == MessageType.text;
+  bool get isText =>
+      type == MessageType.text;
 
-  bool get isImage => type == MessageType.image;
+  bool get isImage =>
+      type == MessageType.image;
 
-  bool get isAudio => type == MessageType.audio;
+  bool get isAudio =>
+      type == MessageType.audio;
 
-  bool get isVideo => type == MessageType.video;
+  bool get isVideo =>
+      type == MessageType.video;
 
-  bool get isDocument => type == MessageType.document;
+  bool get isDocument =>
+      type ==
+          MessageType.document;
 
-  bool get isCall => type == MessageType.call;
+  bool get isCall =>
+      type == MessageType.call;
 
-  bool get isVideoCall => type == MessageType.videoCall;
+  bool get isVideoCall =>
+      type ==
+          MessageType.videoCall;
 
-  bool get isAnyCall => isCall || isVideoCall;
+  bool get isAnyCall =>
+      isCall || isVideoCall;
 
-  bool get isMissedCall => callStatus == 'missed';
+  bool get isVoiceMessage =>
+      isAudio &&
+          (mimeType
+              ?.toLowerCase()
+              .contains('audio') ??
+              false);
 
-  bool get isSeen => status == MessageStatus.seen;
+  bool get isMissedCall =>
+      callStatus == 'missed';
+
+  bool get isSeen =>
+      status ==
+          MessageStatus.seen;
 
   bool get isDelivered =>
-      status == MessageStatus.delivered ||
-          status == MessageStatus.seen;
+      status ==
+          MessageStatus
+              .delivered ||
+          status ==
+              MessageStatus.seen;
 
-  bool get isSending => status == MessageStatus.sending;
+  bool get isSending =>
+      status ==
+          MessageStatus.sending;
 
-  bool get isFailed => status == MessageStatus.failed;
+  bool get isFailed =>
+      status ==
+          MessageStatus.failed;
 
   bool get hasMedia =>
-      mediaUrl != null && mediaUrl!.trim().isNotEmpty;
+      mediaUrl != null &&
+          mediaUrl!
+              .trim()
+              .isNotEmpty;
 
-  String get resolvedUrl => mediaUrl ?? content;
+  String get resolvedUrl =>
+      mediaUrl ?? content;
 
-  String get fileUrl => resolvedUrl;
+  String get fileUrl =>
+      resolvedUrl;
 
   // =========================================================
   // FILE NAME
   // =========================================================
 
   String get fileName {
-    if (originalFileName != null &&
-        originalFileName!.trim().isNotEmpty) {
+    if (originalFileName !=
+        null &&
+        originalFileName!
+            .trim()
+            .isNotEmpty) {
       return originalFileName!;
     }
 
     if (content.isNotEmpty &&
-        !content.startsWith('http://') &&
-        !content.startsWith('https://')) {
+        !content.startsWith(
+          'http://',
+        ) &&
+        !content.startsWith(
+          'https://',
+        )) {
       return content;
     }
 
     try {
-      final uri = Uri.parse(resolvedUrl);
+      final uri = Uri.parse(
+        resolvedUrl,
+      );
 
-      if (uri.pathSegments.isEmpty) {
+      if (uri.pathSegments
+          .isEmpty) {
         return 'file';
       }
 
-      return Uri.decodeComponent(uri.pathSegments.last);
+      return Uri.decodeComponent(
+        uri.pathSegments.last,
+      );
     } catch (_) {
       return 'file';
     }
@@ -293,12 +423,20 @@ class Message {
   // =========================================================
 
   bool get isLink {
-    final value = content.trim();
+    final value =
+    content.trim();
 
-    final isHttp = value.startsWith('http://') ||
-        value.startsWith('https://');
+    final isHttp =
+        value.startsWith(
+          'http://',
+        ) ||
+            value.startsWith(
+              'https://',
+            );
 
-    if (!isHttp) return false;
+    if (!isHttp) {
+      return false;
+    }
 
     if (isImage ||
         isAudio ||
@@ -316,14 +454,22 @@ class Message {
   // =========================================================
 
   String get formattedTime {
-    int hour = createdAt.hour % 12;
-    if (hour == 0) hour = 12;
+    int hour =
+        createdAt.hour % 12;
 
-    final minute =
-    createdAt.minute.toString().padLeft(2, '0');
+    if (hour == 0) {
+      hour = 12;
+    }
+
+    final minute = createdAt
+        .minute
+        .toString()
+        .padLeft(2, '0');
 
     final period =
-    createdAt.hour >= 12 ? 'PM' : 'AM';
+    createdAt.hour >= 12
+        ? 'PM'
+        : 'AM';
 
     return '$hour:$minute $period';
   }
@@ -332,14 +478,25 @@ class Message {
   // CALL DESCRIPTION
   // =========================================================
 
-  String callDescription(String currentUserId) {
-    final outgoing = isMe(currentUserId);
-    final video = isVideoCall;
+  String callDescription(
+      String currentUserId,
+      ) {
+    final outgoing =
+    isMe(currentUserId);
+    final video =
+        isVideoCall;
 
     if (isMissedCall) {
       return video
           ? 'Missed video call'
           : 'Missed voice call';
+    }
+
+    if (callStatus ==
+        'rejected') {
+      return video
+          ? 'Rejected video call'
+          : 'Rejected voice call';
     }
 
     if (outgoing) {
@@ -374,32 +531,67 @@ class Message {
     bool? isStarred,
     bool? isForwarded,
     String? replyToMessageId,
-    Map<String, dynamic>? reactions,
+    Map<String, dynamic>?
+    reactions,
     String? callStatus,
     int? callDuration,
   }) {
     return Message(
       id: id ?? this.id,
-      senderId: senderId ?? this.senderId,
-      receiverId: receiverId ?? this.receiverId,
-      content: content ?? this.content,
+      senderId:
+      senderId ??
+          this.senderId,
+      receiverId:
+      receiverId ??
+          this.receiverId,
+      content:
+      content ??
+          this.content,
       type: type ?? this.type,
-      status: status ?? this.status,
-      createdAt: createdAt ?? this.createdAt,
-      mediaUrl: mediaUrl ?? this.mediaUrl,
+      status:
+      status ??
+          this.status,
+      createdAt:
+      createdAt ??
+          this.createdAt,
+      mediaUrl:
+      mediaUrl ??
+          this.mediaUrl,
       originalFileName:
-      originalFileName ?? this.originalFileName,
-      mimeType: mimeType ?? this.mimeType,
-      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
-      isDeleted: isDeleted ?? this.isDeleted,
-      isEdited: isEdited ?? this.isEdited,
-      isStarred: isStarred ?? this.isStarred,
-      isForwarded: isForwarded ?? this.isForwarded,
+      originalFileName ??
+          this
+              .originalFileName,
+      mimeType:
+      mimeType ??
+          this.mimeType,
+      thumbnailUrl:
+      thumbnailUrl ??
+          this.thumbnailUrl,
+      isDeleted:
+      isDeleted ??
+          this.isDeleted,
+      isEdited:
+      isEdited ??
+          this.isEdited,
+      isStarred:
+      isStarred ??
+          this.isStarred,
+      isForwarded:
+      isForwarded ??
+          this.isForwarded,
       replyToMessageId:
-      replyToMessageId ?? this.replyToMessageId,
-      reactions: reactions ?? this.reactions,
-      callStatus: callStatus ?? this.callStatus,
-      callDuration: callDuration ?? this.callDuration,
+      replyToMessageId ??
+          this
+              .replyToMessageId,
+      reactions:
+      reactions ??
+          this.reactions,
+      callStatus:
+      callStatus ??
+          this.callStatus,
+      callDuration:
+      callDuration ??
+          this.callDuration,
     );
   }
 
@@ -413,10 +605,15 @@ class Message {
         required String source,
       }) {
     final type =
-        value?.toString().toLowerCase().trim() ?? '';
+        value
+            ?.toString()
+            .toLowerCase()
+            .trim() ??
+            '';
 
     switch (type) {
       case 'call':
+      case 'voice_call':
         return MessageType.call;
 
       case 'video_call':
@@ -426,6 +623,7 @@ class Message {
         return MessageType.image;
 
       case 'audio':
+      case 'voice':
         return MessageType.audio;
 
       case 'video':
@@ -436,17 +634,26 @@ class Message {
         return MessageType.document;
     }
 
-    final mime = mimeType?.toLowerCase() ?? '';
+    final mime =
+        mimeType
+            ?.toLowerCase() ??
+            '';
 
-    if (mime.startsWith('image/')) {
+    if (mime.startsWith(
+      'image/',
+    )) {
       return MessageType.image;
     }
 
-    if (mime.startsWith('audio/')) {
+    if (mime.startsWith(
+      'audio/',
+    )) {
       return MessageType.audio;
     }
 
-    if (mime.startsWith('video/')) {
+    if (mime.startsWith(
+      'video/',
+    )) {
       return MessageType.video;
     }
 
@@ -454,7 +661,8 @@ class Message {
       return MessageType.document;
     }
 
-    final ext = _extractExtension(source);
+    final ext =
+    _extractExtension(source);
 
     const imageExt = {
       'jpg',
@@ -472,6 +680,7 @@ class Message {
       'wav',
       'ogg',
       'opus',
+      'flac',
       'webm',
     };
 
@@ -480,6 +689,8 @@ class Message {
       'mov',
       'avi',
       'mkv',
+      '3gp',
+      'webm',
     };
 
     const documentExt = {
@@ -531,18 +742,23 @@ class Message {
       return MessageStatus.seen;
     }
 
-    switch (value?.toString().toLowerCase()) {
+    switch (value
+        ?.toString()
+        .toLowerCase()) {
       case 'sending':
-        return MessageStatus.sending;
+        return MessageStatus
+            .sending;
       case 'sent':
         return MessageStatus.sent;
       case 'delivered':
-        return MessageStatus.delivered;
+        return MessageStatus
+            .delivered;
       case 'seen':
       case 'read':
         return MessageStatus.seen;
       case 'failed':
-        return MessageStatus.failed;
+        return MessageStatus
+            .failed;
       default:
         return MessageStatus.sent;
     }
@@ -552,45 +768,87 @@ class Message {
   // HELPERS
   // =========================================================
 
-  static DateTime _parseDate(dynamic value) {
-    if (value == null) return DateTime.now();
+  static DateTime _parseDate(
+      dynamic value,
+      ) {
+    if (value == null) {
+      return DateTime.now();
+    }
 
     try {
-      return DateTime.parse(value.toString()).toLocal();
+      return DateTime.parse(
+        value.toString(),
+      ).toLocal();
     } catch (_) {
       return DateTime.now();
     }
   }
 
-  static String? _cleanString(dynamic value) {
-    if (value == null) return null;
+  static String? _cleanString(
+      dynamic value,
+      ) {
+    if (value == null) {
+      return null;
+    }
 
-    final text = value.toString().trim();
+    final text =
+    value.toString().trim();
 
-    if (text.isEmpty || text.toLowerCase() == 'null') {
+    if (text.isEmpty ||
+        text.toLowerCase() ==
+            'null') {
       return null;
     }
 
     return text;
   }
 
-  static int? _parseInt(dynamic value) {
-    if (value == null) return null;
-    return int.tryParse(value.toString());
+  static int? _parseInt(
+      dynamic value,
+      ) {
+    if (value == null) {
+      return null;
+    }
+
+    if (value is int) {
+      return value;
+    }
+
+    if (value is num) {
+      return value.toInt();
+    }
+
+    return int.tryParse(
+      value.toString(),
+    );
   }
 
-  static String _extractExtension(String value) {
+  static String _extractExtension(
+      String value,
+      ) {
     try {
       final uri = Uri.parse(value);
-      final path = uri.path.toLowerCase();
+      final path =
+      uri.path.toLowerCase();
 
-      if (!path.contains('.')) return '';
-      return path.split('.').last;
+      if (!path.contains('.')) {
+        return '';
+      }
+
+      return path
+          .split('.')
+          .last;
     } catch (_) {
-      final lower = value.toLowerCase();
+      final lower =
+      value.toLowerCase();
 
-      if (!lower.contains('.')) return '';
-      return lower.split('.').last;
+      if (!lower.contains('.')) {
+        return '';
+      }
+
+      return lower
+          .split('.')
+          .last;
     }
   }
 
@@ -599,13 +857,20 @@ class Message {
   // =========================================================
 
   @override
-  bool operator ==(Object other) {
-    return identical(this, other) ||
-        other is Message && other.id == id;
+  bool operator ==(
+      Object other,
+      ) {
+    return identical(
+      this,
+      other,
+    ) ||
+        other is Message &&
+            other.id == id;
   }
 
   @override
-  int get hashCode => id.hashCode;
+  int get hashCode =>
+      id.hashCode;
 
   @override
   String toString() {
@@ -616,6 +881,7 @@ Message(
   receiverId: $receiverId,
   content: $content,
   type: ${type.name},
+  mediaUrl: $mediaUrl,
   callStatus: $callStatus,
   createdAt: $createdAt
 )

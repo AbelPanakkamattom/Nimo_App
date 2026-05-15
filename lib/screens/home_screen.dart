@@ -22,6 +22,7 @@ class _HomeScreenState
     extends State<HomeScreen> {
   static const Color primary =
   Color(0xFF6C5CE7);
+
   static const Color background =
   Color(0xFFF5F6FF);
 
@@ -31,6 +32,7 @@ class _HomeScreenState
   // =========================================================
   // SCREENS
   // =========================================================
+
   late final List<Widget> _screens =
   const [
     ChatsScreen(),
@@ -43,6 +45,7 @@ class _HomeScreenState
   // =========================================================
   // BOTTOM NAV ITEMS
   // =========================================================
+
   final List<_BottomItem> _items =
   const [
     _BottomItem(
@@ -73,30 +76,48 @@ class _HomeScreenState
   // =========================================================
   // INIT STATE
   // =========================================================
+
   @override
   void initState() {
     super.initState();
-    _initializeZego();
+
+    // Initialize ZEGO after the first frame
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) {
+      _initializeZego();
+    });
   }
 
   // =========================================================
   // INITIALIZE ZEGO
   // =========================================================
-  Future<void> _initializeZego() async {
+
+  Future<void>
+  _initializeZego() async {
     if (_zegoInitializing) {
       return;
     }
 
     try {
-      final user =
-          Supabase.instance.client.auth.currentUser;
+      final user = Supabase
+          .instance
+          .client
+          .auth
+          .currentUser;
 
       if (user == null) {
+        debugPrint(
+          'No authenticated user found.',
+        );
         return;
       }
 
+      // Already initialized
       if (ZegoCallService
           .isInitialized) {
+        debugPrint(
+          'ZEGO already initialized.',
+        );
         return;
       }
 
@@ -120,17 +141,27 @@ class _HomeScreenState
           ?.toString()
           .trim();
 
+      final username =
+      metadata['username']
+          ?.toString()
+          .trim();
+
       final String userName;
 
       if (fullName != null &&
           fullName.isNotEmpty) {
         userName = fullName;
-      } else if (displayName != null &&
+      } else if (displayName !=
+          null &&
           displayName.isNotEmpty) {
         userName = displayName;
       } else if (name != null &&
           name.isNotEmpty) {
         userName = name;
+      } else if (username !=
+          null &&
+          username.isNotEmpty) {
+        userName = username;
       } else {
         userName =
             user.email
@@ -139,9 +170,19 @@ class _HomeScreenState
                 'NIMO User';
       }
 
+      debugPrint(
+        'Initializing ZEGO for '
+            '${user.id} '
+            '($userName)',
+      );
+
       await ZegoCallService.init(
         userID: user.id,
         userName: userName,
+      );
+
+      debugPrint(
+        'ZEGO initialized successfully.',
       );
     } catch (e) {
       debugPrint(
@@ -157,10 +198,11 @@ class _HomeScreenState
       ).showSnackBar(
         SnackBar(
           content: Text(
-            'ZEGO initialization failed: $e',
+            'Call service initialization failed: $e',
           ),
           behavior:
-          SnackBarBehavior.floating,
+          SnackBarBehavior
+              .floating,
         ),
       );
     } finally {
@@ -171,6 +213,7 @@ class _HomeScreenState
   // =========================================================
   // CHANGE TAB
   // =========================================================
+
   void _changeTab(int index) {
     if (_currentIndex == index) {
       return;
@@ -188,6 +231,7 @@ class _HomeScreenState
   // =========================================================
   // FLOATING ACTION BUTTON
   // =========================================================
+
   bool get _showFab =>
       _currentIndex != 4;
 
@@ -200,7 +244,8 @@ class _HomeScreenState
       case 2:
         return Icons.call_rounded;
       case 3:
-        return Icons.auto_awesome_rounded;
+        return Icons
+            .auto_awesome_rounded;
       default:
         return Icons.add_rounded;
     }
@@ -208,9 +253,8 @@ class _HomeScreenState
 
   VoidCallback? _fabAction() {
     switch (_currentIndex) {
-    // Chats → open contacts to start a chat
+    // Chats and Calls
       case 0:
-      // Calls → open contacts to start a call
       case 2:
         return () {
           Navigator.push(
@@ -260,9 +304,6 @@ class _HomeScreenState
     }
   }
 
-  // =========================================================
-  // BUILD FLOATING ACTION BUTTON
-  // =========================================================
   Widget? _buildFab() {
     if (!_showFab) {
       return null;
@@ -272,17 +313,17 @@ class _HomeScreenState
       heroTag: 'home_screen_fab',
       onPressed: _fabAction(),
       backgroundColor: primary,
-      foregroundColor: Colors.white,
+      foregroundColor:
+      Colors.white,
       elevation: 10,
-      child: Icon(
-        _fabIcon(),
-      ),
+      child: Icon(_fabIcon()),
     );
   }
 
   // =========================================================
-  // BUILD BOTTOM NAVIGATION BAR
+  // BOTTOM NAVIGATION BAR
   // =========================================================
+
   Widget _buildBottomNavigationBar() {
     return SafeArea(
       minimum:
@@ -386,7 +427,8 @@ class _HomeScreenState
                               .label,
                           style:
                           const TextStyle(
-                            color: Colors
+                            color:
+                            Colors
                                 .white,
                             fontWeight:
                             FontWeight
@@ -410,6 +452,7 @@ class _HomeScreenState
   // =========================================================
   // BUILD
   // =========================================================
+
   @override
   Widget build(
       BuildContext context,

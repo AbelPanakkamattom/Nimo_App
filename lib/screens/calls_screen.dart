@@ -75,13 +75,14 @@ class _CallsScreenState extends State<CallsScreen> {
   }
 
   // =========================================================
-  // SEARCH FILTER
+  // FILTER CALLS
   // =========================================================
 
   List<CallModel> _filterCalls(
       List<CallModel> calls,
       ) {
-    final query = _search.trim().toLowerCase();
+    final query =
+    _search.trim().toLowerCase();
 
     if (query.isEmpty) {
       return calls;
@@ -95,7 +96,7 @@ class _CallsScreenState extends State<CallsScreen> {
   }
 
   // =========================================================
-  // DATE GROUP TITLE
+  // SECTION TITLE
   // =========================================================
 
   String _sectionTitle(
@@ -107,11 +108,15 @@ class _CallsScreenState extends State<CallsScreen> {
     final today =
     DateTime(now.year, now.month, now.day);
 
-    final yesterday =
-    today.subtract(const Duration(days: 1));
+    final yesterday = today.subtract(
+      const Duration(days: 1),
+    );
 
-    final target =
-    DateTime(local.year, local.month, local.day);
+    final target = DateTime(
+      local.year,
+      local.month,
+      local.day,
+    );
 
     if (target == today) {
       return 'Today';
@@ -128,10 +133,12 @@ class _CallsScreenState extends State<CallsScreen> {
   // GROUP CALLS
   // =========================================================
 
-  Map<String, List<CallModel>> _groupCalls(
+  Map<String, List<CallModel>>
+  _groupCalls(
       List<CallModel> calls,
       ) {
-    final grouped = <String, List<CallModel>>{
+    final grouped =
+    <String, List<CallModel>>{
       'Today': [],
       'Yesterday': [],
       'Older': [],
@@ -159,7 +166,8 @@ class _CallsScreenState extends State<CallsScreen> {
       DateTime date,
       ) {
     final local = date.toLocal();
-    final section = _sectionTitle(local);
+    final section =
+    _sectionTitle(local);
 
     if (section == 'Today') {
       return 'Today, ${DateFormat('h:mm a').format(local)}';
@@ -218,12 +226,12 @@ class _CallsScreenState extends State<CallsScreen> {
       CallModel call,
       ) {
     return call.isVideoCall
-        ? Icons.videocam
-        : Icons.call;
+        ? Icons.videocam_rounded
+        : Icons.call_rounded;
   }
 
   // =========================================================
-  // DURATION FORMAT
+  // FORMAT DURATION
   // =========================================================
 
   String _formatDuration(
@@ -236,7 +244,8 @@ class _CallsScreenState extends State<CallsScreen> {
     final duration =
     Duration(seconds: seconds);
 
-    final hours = duration.inHours;
+    final hours =
+        duration.inHours;
     final minutes =
         duration.inMinutes % 60;
     final secs =
@@ -273,15 +282,18 @@ class _CallsScreenState extends State<CallsScreen> {
             'No calls yet',
             style: TextStyle(
               fontSize: 22,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade700,
+              fontWeight:
+              FontWeight.w600,
+              color:
+              Colors.grey.shade700,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Your call history will appear here.',
+            'Your voice and video calls will appear here.',
             style: TextStyle(
-              color: Colors.grey.shade500,
+              color:
+              Colors.grey.shade500,
             ),
           ),
         ],
@@ -297,62 +309,84 @@ class _CallsScreenState extends State<CallsScreen> {
       CallModel call,
       ) {
     final durationText =
-    _formatDuration(call.duration);
+    _formatDuration(
+      call.duration,
+    );
 
     return Container(
-      margin: const EdgeInsets.only(
+      margin:
+      const EdgeInsets.only(
         bottom: 16,
       ),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius:
-        BorderRadius.circular(26),
+        BorderRadius.circular(
+          26,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withAlpha(10),
+            color:
+            Colors.black.withAlpha(
+              10,
+            ),
             blurRadius: 12,
-            offset: const Offset(0, 5),
+            offset:
+            const Offset(0, 5),
           ),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding:
+        const EdgeInsets.all(
+          16,
+        ),
         child: Row(
           children: [
             ProfileAvatar(
-              name: call.otherUserName,
+              name:
+              call.otherUserName,
               imageUrl:
               call.otherUserAvatar,
               radius: 30,
               isOnline: false,
             ),
 
-            const SizedBox(width: 16),
+            const SizedBox(
+              width: 16,
+            ),
 
             Expanded(
               child: Column(
                 crossAxisAlignment:
-                CrossAxisAlignment.start,
+                CrossAxisAlignment
+                    .start,
                 children: [
                   Text(
                     call.otherUserName,
                     maxLines: 1,
                     overflow:
-                    TextOverflow.ellipsis,
+                    TextOverflow
+                        .ellipsis,
                     style:
                     const TextStyle(
                       fontSize: 17,
                       fontWeight:
-                      FontWeight.bold,
+                      FontWeight
+                          .bold,
                     ),
                   ),
 
-                  const SizedBox(height: 6),
+                  const SizedBox(
+                    height: 6,
+                  ),
 
                   Row(
                     children: [
                       Icon(
-                        _directionIcon(call),
+                        _directionIcon(
+                          call,
+                        ),
                         size: 18,
                         color:
                         _directionColor(
@@ -365,14 +399,17 @@ class _CallsScreenState extends State<CallsScreen> {
                       Expanded(
                         child: Text(
                           _formatDate(
-                            call.createdAt,
+                            call
+                                .createdAt,
                           ),
                           maxLines: 1,
                           overflow:
                           TextOverflow
                               .ellipsis,
-                          style: TextStyle(
-                            fontSize: 14,
+                          style:
+                          TextStyle(
+                            fontSize:
+                            14,
                             color: Colors
                                 .grey
                                 .shade600,
@@ -389,8 +426,10 @@ class _CallsScreenState extends State<CallsScreen> {
                     ),
                     Text(
                       'Duration: $durationText',
-                      style: TextStyle(
-                        fontSize: 12,
+                      style:
+                      TextStyle(
+                        fontSize:
+                        12,
                         color: Colors
                             .grey
                             .shade500,
@@ -401,28 +440,42 @@ class _CallsScreenState extends State<CallsScreen> {
               ),
             ),
 
-            const SizedBox(width: 12),
+            const SizedBox(
+              width: 12,
+            ),
 
             InkWell(
               onTap: () {
                 if (call.isVideoCall) {
-                  _startVideoCall(call);
+                  _startVideoCall(
+                    call,
+                  );
                 } else {
-                  _startVoiceCall(call);
+                  _startVoiceCall(
+                    call,
+                  );
                 }
               },
               borderRadius:
-              BorderRadius.circular(30),
+              BorderRadius.circular(
+                30,
+              ),
               child: Container(
                 width: 54,
                 height: 54,
-                decoration: BoxDecoration(
-                  color:
-                  primary.withAlpha(20),
-                  shape: BoxShape.circle,
+                decoration:
+                BoxDecoration(
+                  color: primary
+                      .withAlpha(
+                    20,
+                  ),
+                  shape:
+                  BoxShape.circle,
                 ),
                 child: Icon(
-                  _callTypeIcon(call),
+                  _callTypeIcon(
+                    call,
+                  ),
                   color: primary,
                   size: 28,
                 ),
@@ -463,7 +516,9 @@ class _CallsScreenState extends State<CallsScreen> {
             ),
           ),
         ),
-        ...calls.map(_buildCallTile),
+        ...calls.map(
+          _buildCallTile,
+        ),
       ],
     );
   }
@@ -477,16 +532,15 @@ class _CallsScreenState extends State<CallsScreen> {
       BuildContext context,
       ) {
     return Scaffold(
-      backgroundColor: background,
+      backgroundColor:
+      background,
 
       floatingActionButton:
       FloatingActionButton(
-        backgroundColor: primary,
+        backgroundColor:
+        primary,
         elevation: 8,
-        onPressed: () {
-          // Optional:
-          // Open contacts to start a new call
-        },
+        onPressed: () {},
         child: const Icon(
           Icons.add_call,
           color: Colors.white,
@@ -499,7 +553,8 @@ class _CallsScreenState extends State<CallsScreen> {
             // HEADER
             Padding(
               padding:
-              const EdgeInsets.fromLTRB(
+              const EdgeInsets
+                  .fromLTRB(
                 22,
                 18,
                 22,
@@ -510,31 +565,37 @@ class _CallsScreenState extends State<CallsScreen> {
                   const Expanded(
                     child: Text(
                       'Calls',
-                      style: TextStyle(
-                        fontSize: 36,
+                      style:
+                      TextStyle(
+                        fontSize:
+                        36,
                         fontWeight:
-                        FontWeight.bold,
+                        FontWeight
+                            .bold,
                       ),
                     ),
                   ),
                   Container(
                     decoration:
                     BoxDecoration(
-                      color: Colors.white,
+                      color:
+                      Colors.white,
                       borderRadius:
                       BorderRadius
                           .circular(
                         18,
                       ),
                     ),
-                    child: IconButton(
-                      onPressed: () {
-                        // Optional:
-                        // Open contacts screen
-                      },
-                      icon: const Icon(
-                        Icons.add_ic_call,
-                        color: primary,
+                    child:
+                    IconButton(
+                      onPressed:
+                          () {},
+                      icon:
+                      const Icon(
+                        Icons
+                            .add_ic_call,
+                        color:
+                        primary,
                       ),
                     ),
                   ),
@@ -545,24 +606,28 @@ class _CallsScreenState extends State<CallsScreen> {
             // SEARCH
             Padding(
               padding:
-              const EdgeInsets.all(
-                22,
-              ),
+              const EdgeInsets
+                  .all(22),
               child: Container(
                 decoration:
                 BoxDecoration(
-                  color: Colors.white,
+                  color:
+                  Colors.white,
                   borderRadius:
                   BorderRadius
-                      .circular(22),
+                      .circular(
+                    22,
+                  ),
                 ),
                 child: TextField(
                   controller:
                   _searchController,
-                  onChanged: (value) {
+                  onChanged:
+                      (value) {
                     setState(() {
                       _search =
-                          value.trim();
+                          value
+                              .trim();
                     });
                   },
                   decoration:
@@ -570,13 +635,16 @@ class _CallsScreenState extends State<CallsScreen> {
                     hintText:
                     'Search calls...',
                     prefixIcon:
-                    Icon(Icons.search),
+                    Icon(
+                      Icons.search,
+                    ),
                     border:
-                    InputBorder.none,
+                    InputBorder
+                        .none,
                     contentPadding:
-                    EdgeInsets
-                        .symmetric(
-                      vertical: 18,
+                    EdgeInsets.symmetric(
+                      vertical:
+                      18,
                     ),
                   ),
                 ),
@@ -587,7 +655,8 @@ class _CallsScreenState extends State<CallsScreen> {
             Expanded(
               child:
               StreamBuilder<
-                  List<CallModel>>(
+                  List<
+                      CallModel>>(
                 stream:
                 CallHistoryService
                     .getCallHistory(),
@@ -595,8 +664,10 @@ class _CallsScreenState extends State<CallsScreen> {
                     context,
                     snapshot,
                     ) {
-                  if (!snapshot
-                      .hasData) {
+                  if (snapshot
+                      .connectionState ==
+                      ConnectionState
+                          .waiting) {
                     return const Center(
                       child:
                       CircularProgressIndicator(
@@ -610,9 +681,19 @@ class _CallsScreenState extends State<CallsScreen> {
                       snapshot.data ??
                           [];
 
+                  // Keep only voice and video calls
+                  final callHistory =
+                  allCalls
+                      .where(
+                        (call) =>
+                    call.isVideoCall ||
+                        !call.isVideoCall,
+                  )
+                      .toList();
+
                   final filteredCalls =
                   _filterCalls(
-                    allCalls,
+                    callHistory,
                   );
 
                   if (filteredCalls
@@ -637,7 +718,9 @@ class _CallsScreenState extends State<CallsScreen> {
                     children:
                     grouped.entries
                         .map(
-                          (entry) =>
+                          (
+                          entry,
+                          ) =>
                           _buildSection(
                             entry.key,
                             entry.value,
