@@ -1,30 +1,19 @@
 class CallModel {
   final String id;
 
-  // Current user is the caller
+  // Database fields
   final String callerId;
-
-  // Other user is the receiver
   final String receiverId;
-
-  /// 'voice' or 'video'
-  final String callType;
-
-  /// 'outgoing' or 'incoming'
-  final String direction;
-
-  /// 'ringing', 'answered', 'completed',
-  /// 'missed', 'rejected', 'cancelled'
-  final String status;
-
-  /// Duration in seconds
+  final String callType; // voice | video
+  final String direction; // outgoing | incoming
+  final String status; // completed | missed | rejected | cancelled
   final int durationSeconds;
 
   final DateTime? startedAt;
   final DateTime? endedAt;
   final DateTime createdAt;
 
-  // Additional fields used by calls_screen.dart
+  // UI fields
   final String otherUserId;
   final String otherUserName;
   final String? otherUserAvatar;
@@ -46,49 +35,92 @@ class CallModel {
   });
 
   // =========================================================
-  // FACTORY
+  // FROM JSON
   // =========================================================
 
-  factory CallModel.fromJson(Map<String, dynamic> json) {
+  factory CallModel.fromJson(
+      Map<String, dynamic> json,
+      ) {
+    String avatar =
+    (json['other_user_avatar'] ??
+        json['avatar_url'] ??
+        '')
+        .toString()
+        .trim();
+
+    if (avatar.isEmpty) {
+      avatar = '';
+    }
+
     return CallModel(
-      id: json['id']?.toString() ?? '',
-      callerId: json['caller_id']?.toString() ?? '',
-      receiverId: json['receiver_id']?.toString() ?? '',
-      callType: json['call_type']?.toString() ?? 'voice',
-      direction: json['direction']?.toString() ?? 'outgoing',
-      status: json['status']?.toString() ?? 'completed',
+      id: (json['id'] ?? '').toString(),
+
+      callerId:
+      (json['caller_id'] ?? '').toString(),
+
+      receiverId:
+      (json['receiver_id'] ?? '').toString(),
+
+      callType:
+      (json['call_type'] ?? 'voice')
+          .toString(),
+
+      direction:
+      (json['direction'] ??
+          'outgoing')
+          .toString(),
+
+      status:
+      (json['status'] ??
+          'completed')
+          .toString(),
+
       durationSeconds:
-      (json['duration_seconds'] as num?)?.toInt() ?? 0,
-      startedAt: json['started_at'] != null
+      (json['duration_seconds']
+      as num?)
+          ?.toInt() ??
+          0,
+
+      startedAt:
+      json['started_at'] != null
           ? DateTime.tryParse(
-        json['started_at'].toString(),
+        json['started_at']
+            .toString(),
       )
           : null,
-      endedAt: json['ended_at'] != null
+
+      endedAt:
+      json['ended_at'] != null
           ? DateTime.tryParse(
-        json['ended_at'].toString(),
+        json['ended_at']
+            .toString(),
       )
           : null,
+
       createdAt:
       DateTime.tryParse(
-        json['created_at']?.toString() ?? '',
+        (json['created_at'] ??
+            '')
+            .toString(),
       ) ??
           DateTime.now(),
 
-      // Additional fields
+      // UI fields
       otherUserId:
-      json['other_user_id']?.toString() ??
-          json['receiver_id']?.toString() ??
-          '',
+      (json['other_user_id'] ??
+          json['receiver_id'] ??
+          '')
+          .toString(),
+
       otherUserName:
-      json['other_user_name']?.toString() ??
-          json['other_user_full_name']?.toString() ??
-          json['full_name']?.toString() ??
-          json['name']?.toString() ??
-          'Unknown User',
+      (json['other_user_name'] ??
+          json['name'] ??
+          json['full_name'] ??
+          'Unknown User')
+          .toString(),
+
       otherUserAvatar:
-      json['other_user_avatar']?.toString() ??
-          json['avatar_url']?.toString(),
+      avatar.isEmpty ? null : avatar,
     );
   }
 
@@ -111,8 +143,6 @@ class CallModel {
       endedAt?.toUtc().toIso8601String(),
       'created_at':
       createdAt.toUtc().toIso8601String(),
-
-      // Additional fields
       'other_user_id': otherUserId,
       'other_user_name': otherUserName,
       'other_user_avatar': otherUserAvatar,
@@ -120,28 +150,17 @@ class CallModel {
   }
 
   // =========================================================
-  // BASIC HELPERS
+  // TYPE HELPERS
   // =========================================================
 
-  bool get isVoiceCall => callType == 'voice';
+  bool get isVoiceCall =>
+      callType.toLowerCase() == 'voice';
 
-  bool get isVideoCall => callType == 'video';
-
-  bool get isMissedCall => status == 'missed';
-
-  bool get isCompleted => status == 'completed';
-
-  bool get isRejected => status == 'rejected';
-
-  bool get isCancelled => status == 'cancelled';
-
-  bool get hasDuration => durationSeconds > 0;
-
-  Duration get durationObject =>
-      Duration(seconds: durationSeconds);
+  bool get isVideoCall =>
+      callType.toLowerCase() == 'video';
 
   // =========================================================
-  // HELPERS USED BY calls_screen.dart
+  // DIRECTION HELPERS
   // =========================================================
 
   bool get isOutgoing =>
@@ -150,24 +169,47 @@ class CallModel {
   bool get isIncoming =>
       direction.toLowerCase() == 'incoming';
 
+  // =========================================================
+  // STATUS HELPERS
+  // =========================================================
+
   bool get isMissed =>
       status.toLowerCase() == 'missed';
 
-  /// Integer duration in seconds (used by calls_screen.dart)
-  int get duration => durationSeconds;
+  bool get isMissedCall => isMissed;
+
+  bool get isCompleted =>
+      status.toLowerCase() == 'completed';
+
+  bool get isRejected =>
+      status.toLowerCase() == 'rejected';
+
+  bool get isCancelled =>
+      status.toLowerCase() == 'cancelled';
 
   // =========================================================
-  // FORMATTED DURATION
+  // DURATION HELPERS
   // =========================================================
+
+  int get duration => durationSeconds;
+
+  bool get hasDuration =>
+      durationSeconds > 0;
+
+  Duration get durationObject =>
+      Duration(seconds: durationSeconds);
 
   String get formattedDuration {
     if (durationSeconds <= 0) {
       return '0:00';
     }
 
-    final hours = durationSeconds ~/ 3600;
+    final hours =
+        durationSeconds ~/ 3600;
+
     final minutes =
         (durationSeconds % 3600) ~/ 60;
+
     final seconds =
         durationSeconds % 60;
 
@@ -185,7 +227,9 @@ class CallModel {
   // DESCRIPTION
   // =========================================================
 
-  String description(String currentUserId) {
+  String description(
+      String currentUserId,
+      ) {
     final outgoing =
         callerId == currentUserId;
 
@@ -194,15 +238,15 @@ class CallModel {
         ? 'video call'
         : 'voice call';
 
-    if (status == 'missed') {
+    if (isMissed) {
       return 'Missed $typeText';
     }
 
-    if (status == 'rejected') {
+    if (isRejected) {
       return 'Rejected $typeText';
     }
 
-    if (status == 'cancelled') {
+    if (isCancelled) {
       return 'Cancelled $typeText';
     }
 

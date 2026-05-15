@@ -13,7 +13,9 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
-    <!-- Bluetooth -->
+    <!-- ===================================================== -->
+    <!-- BLUETOOTH -->
+    <!-- ===================================================== -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
@@ -22,6 +24,7 @@
     <!-- NOTIFICATIONS -->
     <!-- ===================================================== -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- ===================================================== -->
     <!-- CONTACTS -->
@@ -31,22 +34,56 @@
     <!-- ===================================================== -->
     <!-- STORAGE / MEDIA -->
     <!-- ===================================================== -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+
+    <!-- Android 12 and below -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Android 13+ -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+
+    <!-- Save files to Downloads -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <!-- ===================================================== -->
     <!-- WAKE LOCK -->
     <!-- ===================================================== -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- ===================================================== -->
+    <!-- FOREGROUND SERVICE -->
+    <!-- ===================================================== -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
     <application
         android:name="${applicationName}"
         android:label="NIMO"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:requestLegacyExternalStorage="true">
 
+        <!-- ================================================= -->
+        <!-- FIREBASE DEFAULT NOTIFICATION CHANNEL -->
+        <!-- ================================================= -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="nimo_messages" />
+
+        <!-- ================================================= -->
+        <!-- FLUTTER LOCAL NOTIFICATIONS -->
+        <!-- ================================================= -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
+
+        <!-- ================================================= -->
+        <!-- MAIN ACTIVITY -->
+        <!-- ================================================= -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -80,7 +117,9 @@
             </intent-filter>
         </activity>
 
-        <!-- Flutter embedding -->
+        <!-- ================================================= -->
+        <!-- FLUTTER EMBEDDING -->
+        <!-- ================================================= -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

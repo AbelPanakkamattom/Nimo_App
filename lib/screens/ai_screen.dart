@@ -1,251 +1,592 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:google_generative_ai/google_generative_ai.dart';
 
 class AIScreen extends StatefulWidget {
   const AIScreen({super.key});
 
   @override
-  State<AIScreen> createState() => _AIScreenState();
+  State<AIScreen> createState() =>
+      _AIScreenState();
 }
 
-class _AIScreenState extends State<AIScreen> {
-  final TextEditingController _controller = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
+class _AIScreenState
+    extends State<AIScreen> {
+  // =========================================================
+  // COLORS
+  // =========================================================
 
-  final List<_AIMessage> _messages = [
+  static const Color primary =
+  Color(0xFF6C5CE7);
+
+  static const Color secondary =
+  Color(0xFF8E7BFF);
+
+  static const Color background =
+  Color(0xFFF5F6FF);
+
+  // =========================================================
+  // CONTROLLERS
+  // =========================================================
+
+  final TextEditingController
+  _controller =
+  TextEditingController();
+
+  final ScrollController
+  _scrollController =
+  ScrollController();
+
+  // =========================================================
+  // AI MODEL
+  // =========================================================
+
+  GenerativeModel? _model;
+
+  // =========================================================
+  // STATES
+  // =========================================================
+
+  bool _isLoading = false;
+
+  final List<_AIMessage>
+  _messages = [
     const _AIMessage(
       isMe: false,
-      text: 'Hi 👋 I am NIMO AI. How can I help you today?',
+      text:
+      'Hi 👋 I am NIMO AI.\nHow can I help you today?',
     ),
   ];
 
-  bool _typing = false;
+  // =========================================================
+  // INIT
+  // =========================================================
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeAI();
+  }
+
+  // =========================================================
+  // INITIALIZE GEMINI AI
+  // =========================================================
+
+  void _initializeAI() {
+    try {
+      final apiKey =
+      dotenv.env['GEMINI_API_KEY'];
+
+      if (apiKey == null ||
+          apiKey.isEmpty) {
+        debugPrint(
+          'GEMINI_API_KEY missing',
+        );
+        return;
+      }
+
+      _model = GenerativeModel(
+        model: 'gemini-2.0-flash',
+        apiKey: apiKey,
+      );
+
+      debugPrint(
+        'GEMINI AI INITIALIZED',
+      );
+    } catch (e) {
+      debugPrint(
+        'AI INIT ERROR: $e',
+      );
+    }
+  }
+
+  // =========================================================
+  // SEND MESSAGE
+  // =========================================================
 
   Future<void> _sendMessage() async {
-    final text = _controller.text.trim();
+    final text =
+    _controller.text.trim();
 
-    if (text.isEmpty) return;
+    if (text.isEmpty ||
+        _isLoading) {
+      return;
+    }
 
     setState(() {
-      _messages.add(_AIMessage(isMe: true, text: text));
-      _typing = true;
+      _messages.add(
+        _AIMessage(
+          isMe: true,
+          text: text,
+        ),
+      );
+
+      _isLoading = true;
     });
 
     _controller.clear();
+
     _scrollToBottom();
 
-    await Future.delayed(const Duration(milliseconds: 1200));
+    try {
+      String prompt = text;
+
+      // -----------------------------------------------------
+      // SMART REPLIES
+      // -----------------------------------------------------
+
+      if (text.startsWith(
+        'SMART_REPLY:',
+      )) {
+        final content = text.replaceFirst(
+          'SMART_REPLY:',
+          '',
+        );
+
+        prompt = '''
+Generate 5 short smart replies for this message:
+
+$content
+''';
+      }
+
+      // -----------------------------------------------------
+      // TRANSLATION
+      // -----------------------------------------------------
+
+      else if (text.startsWith(
+        'TRANSLATE:',
+      )) {
+        final content = text.replaceFirst(
+          'TRANSLATE:',
+          '',
+        );
+
+        prompt = '''
+Translate this text into English:
+
+$content
+''';
+      }
+
+      // -----------------------------------------------------
+      // REWRITE
+      // -----------------------------------------------------
+
+      else if (text.startsWith(
+        'REWRITE:',
+      )) {
+        final content = text.replaceFirst(
+          'REWRITE:',
+          '',
+        );
+
+        prompt = '''
+Rewrite this professionally:
+
+$content
+''';
+      }
+
+      // -----------------------------------------------------
+      // EMAIL
+      // -----------------------------------------------------
+
+      else if (text.startsWith(
+        'EMAIL:',
+      )) {
+        final content = text.replaceFirst(
+          'EMAIL:',
+          '',
+        );
+
+        prompt = '''
+Write a professional email for:
+
+$content
+''';
+      }
+
+      // -----------------------------------------------------
+      // GENERAL QA
+      // -----------------------------------------------------
+
+      else if (text.startsWith(
+        'QUESTION:',
+      )) {
+        final content = text.replaceFirst(
+          'QUESTION:',
+          '',
+        );
+
+        prompt = '''
+Answer this question clearly:
+
+$content
+''';
+      }
+
+      // -----------------------------------------------------
+      // NORMAL CHAT
+      // -----------------------------------------------------
+
+      final response =
+      await _model!.generateContent([
+        Content.text(prompt),
+      ]);
+
+      final reply =
+          response.text ??
+              'No response generated';
+
+      if (!mounted) return;
+
+      setState(() {
+        _messages.add(
+          _AIMessage(
+            isMe: false,
+            text: reply,
+          ),
+        );
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _messages.add(
+          _AIMessage(
+            isMe: false,
+            text:
+            'AI Error:\n\n$e',
+          ),
+        );
+      });
+    }
 
     if (!mounted) return;
 
     setState(() {
-      _typing = false;
-      _messages.add(
-        _AIMessage(
-          isMe: false,
-          text: _generateReply(text),
-        ),
-      );
+      _isLoading = false;
     });
 
     _scrollToBottom();
   }
 
-  String _generateReply(String text) {
-    final lower = text.toLowerCase();
+  // =========================================================
+  // FEATURE BUTTON
+  // =========================================================
 
-    if (lower.contains('hello') || lower.contains('hi')) {
-      return 'Hello 👋 How are you today?';
+  void _selectFeature(
+      String type,
+      ) {
+    switch (type) {
+      case 'reply':
+        _controller.text =
+        'SMART_REPLY: ';
+        break;
+
+      case 'translate':
+        _controller.text =
+        'TRANSLATE: ';
+        break;
+
+      case 'rewrite':
+        _controller.text =
+        'REWRITE: ';
+        break;
+
+      case 'email':
+        _controller.text =
+        'EMAIL: ';
+        break;
+
+      case 'qa':
+        _controller.text =
+        'QUESTION: ';
+        break;
     }
 
-    if (lower.contains('flutter')) {
-      return 'Flutter is an amazing framework for building beautiful cross-platform apps 🚀';
-    }
-
-    if (lower.contains('nimo')) {
-      return 'NIMO is your smart messaging and AI platform 💜';
-    }
-
-    if (lower.contains('love')) {
-      return 'Love makes everything beautiful ❤️';
-    }
-
-    if (lower.contains('jesus')) {
-      return 'Jesus is our hope and saviour ✝️';
-    }
-
-    return 'AI feature is under development 🚀';
+    _controller.selection =
+        TextSelection.fromPosition(
+          TextPosition(
+            offset:
+            _controller.text.length,
+          ),
+        );
   }
 
+  // =========================================================
+  // SCROLL
+  // =========================================================
+
   void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) {
+      if (!_scrollController
+          .hasClients) {
+        return;
       }
+
+      _scrollController.animateTo(
+        _scrollController
+            .position
+            .maxScrollExtent,
+        duration: const Duration(
+          milliseconds: 300,
+        ),
+        curve: Curves.easeOut,
+      );
     });
   }
 
-  Widget _buildFeatureCard({
+  // =========================================================
+  // FEATURE CARD
+  // =========================================================
+
+  Widget _featureCard({
     required IconData icon,
     required String title,
     required String subtitle,
+    required VoidCallback onTap,
   }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(8),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+    return InkWell(
+      onTap: onTap,
+      borderRadius:
+      BorderRadius.circular(
+        22,
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: const Color(0xFF6C5CE7).withAlpha(25),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(
-              icon,
-              color: const Color(0xFF6C5CE7),
-            ),
+      child: Container(
+        margin:
+        const EdgeInsets.only(
+          bottom: 14,
+        ),
+        padding:
+        const EdgeInsets.all(
+          16,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius:
+          BorderRadius.circular(
+            22,
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1E1E1E),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey.shade600,
-                    height: 1.35,
-                  ),
-                ),
-              ],
+          boxShadow: [
+            BoxShadow(
+              color:
+              Colors.black.withAlpha(
+                8,
+              ),
+              blurRadius: 12,
+              offset:
+              const Offset(
+                0,
+                4,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: primary.withAlpha(
+                  20,
+                ),
+                borderRadius:
+                BorderRadius.circular(
+                  16,
+                ),
+              ),
+              child: Icon(
+                icon,
+                color: primary,
+              ),
+            ),
+            const SizedBox(
+              width: 14,
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment:
+                CrossAxisAlignment
+                    .start,
+                children: [
+                  Text(
+                    title,
+                    style:
+                    const TextStyle(
+                      fontSize: 17,
+                      fontWeight:
+                      FontWeight
+                          .bold,
+                    ),
+                  ),
+                  const SizedBox(
+                    height: 4,
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: Colors
+                          .grey
+                          .shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.arrow_forward_ios,
+              size: 16,
+              color: Colors.grey,
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildBubble(_AIMessage message) {
+  // =========================================================
+  // MESSAGE BUBBLE
+  // =========================================================
+
+  Widget _messageBubble(
+      _AIMessage message,
+      ) {
     final isMe = message.isMe;
 
     return Align(
       alignment:
-      isMe ? Alignment.centerRight : Alignment.centerLeft,
+      isMe
+          ? Alignment
+          .centerRight
+          : Alignment
+          .centerLeft,
       child: Container(
-        constraints: const BoxConstraints(maxWidth: 300),
-        margin: const EdgeInsets.symmetric(
+        constraints:
+        const BoxConstraints(
+          maxWidth: 320,
+        ),
+        margin:
+        const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 5,
         ),
-        padding: const EdgeInsets.symmetric(
+        padding:
+        const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 12,
         ),
         decoration: BoxDecoration(
-          color: isMe
-              ? const Color(0xFF6C5CE7)
+          color:
+          isMe
+              ? primary
               : Colors.white,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius:
+          BorderRadius.circular(
+            18,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withAlpha(8),
+              color:
+              Colors.black.withAlpha(
+                8,
+              ),
               blurRadius: 8,
-              offset: const Offset(0, 3),
+              offset:
+              const Offset(
+                0,
+                3,
+              ),
             ),
           ],
         ),
         child: Text(
           message.text,
           style: TextStyle(
+            color:
+            isMe
+                ? Colors.white
+                : Colors.black87,
             fontSize: 15,
-            color: isMe ? Colors.white : Colors.black87,
-            height: 1.4,
+            height: 1.5,
           ),
         ),
       ),
     );
   }
 
-  Widget _buildHeroCard() {
+  // =========================================================
+  // HERO CARD
+  // =========================================================
+
+  Widget _heroCard() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-      padding: const EdgeInsets.all(24),
+      margin:
+      const EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        20,
+      ),
+      padding:
+      const EdgeInsets.all(
+        24,
+      ),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient:
+        const LinearGradient(
           colors: [
-            Color(0xFF6C5CE7),
-            Color(0xFF8E7BFF),
+            primary,
+            secondary,
           ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF6C5CE7).withAlpha(80),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        borderRadius:
+        BorderRadius.circular(
+          28,
+        ),
       ),
       child: Column(
         children: [
           Container(
-            width: 82,
-            height: 82,
+            width: 84,
+            height: 84,
             decoration: BoxDecoration(
-              color: Colors.white.withAlpha(40),
+              color:
+              Colors.white.withAlpha(
+                30,
+              ),
               shape: BoxShape.circle,
             ),
             child: const Icon(
-              Icons.smart_toy,
-              size: 42,
+              Icons.auto_awesome,
               color: Colors.white,
+              size: 40,
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(
+            height: 18,
+          ),
           const Text(
-            'AI Assistant',
+            'NIMO AI',
             style: TextStyle(
               color: Colors.white,
-              fontSize: 26,
-              fontWeight: FontWeight.bold,
+              fontSize: 28,
+              fontWeight:
+              FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(
+            height: 8,
+          ),
           const Text(
-            'Your smart assistant for chatting, productivity and creativity.',
+            'Smart AI assistant powered by Gemini',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white70,
               height: 1.5,
-              fontSize: 14,
             ),
           ),
         ],
@@ -253,22 +594,33 @@ class _AIScreenState extends State<AIScreen> {
     );
   }
 
-  Widget _buildInputArea() {
+  // =========================================================
+  // INPUT AREA
+  // =========================================================
+  Widget _inputArea() {
+    const double bottomNavHeight = 92;
+
     return SafeArea(
       top: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        padding: EdgeInsets.fromLTRB(
+          12,
+          12,
+          12,
+          12 + bottomNavHeight,
+        ),
         decoration: BoxDecoration(
           color: Colors.white,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withAlpha(6),
+              color: Colors.black.withAlpha(8),
               blurRadius: 10,
               offset: const Offset(0, -2),
             ),
           ],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Expanded(
               child: TextField(
@@ -280,7 +632,7 @@ class _AIScreenState extends State<AIScreen> {
                 decoration: InputDecoration(
                   hintText: 'Ask AI something...',
                   filled: true,
-                  fillColor: const Color(0xFFF5F6FF),
+                  fillColor: background,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 18,
                     vertical: 14,
@@ -292,17 +644,25 @@ class _AIScreenState extends State<AIScreen> {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             GestureDetector(
               onTap: _sendMessage,
               child: Container(
-                width: 52,
-                height: 52,
+                width: 56,
+                height: 56,
                 decoration: const BoxDecoration(
-                  color: Color(0xFF6C5CE7),
+                  color: primary,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
+                child: _isLoading
+                    ? const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+                    : const Icon(
                   Icons.send,
                   color: Colors.white,
                 ),
@@ -314,114 +674,165 @@ class _AIScreenState extends State<AIScreen> {
     );
   }
 
-  Widget _buildBody() {
-    return CustomScrollView(
-      controller: _scrollController,
-      keyboardDismissBehavior:
-      ScrollViewKeyboardDismissBehavior.onDrag,
-      slivers: [
-        SliverToBoxAdapter(
-          child: _buildHeroCard(),
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          sliver: SliverList(
-            delegate: SliverChildListDelegate([
-              _buildFeatureCard(
-                icon: Icons.chat_bubble_outline,
-                title: 'Smart Replies',
-                subtitle:
-                'Generate instant intelligent replies.',
-              ),
-              _buildFeatureCard(
-                icon: Icons.translate,
-                title: 'Translation',
-                subtitle:
-                'Translate messages instantly.',
-              ),
-              _buildFeatureCard(
-                icon: Icons.edit_note,
-                title: 'Rewrite Messages',
-                subtitle:
-                'Improve writing using AI.',
-              ),
-              const SizedBox(height: 8),
-            ]),
-          ),
-        ),
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-                (context, index) {
-              if (_typing &&
-                  index == _messages.length) {
-                return _buildBubble(
-                  const _AIMessage(
-                    isMe: false,
-                    text: 'Typing...',
-                  ),
-                );
-              }
-
-              return _buildBubble(_messages[index]);
-            },
-            childCount:
-            _messages.length + (_typing ? 1 : 0),
-          ),
-        ),
-        const SliverToBoxAdapter(
-          child: SizedBox(height: 12),
-        ),
-      ],
-    );
-  }
+  // =========================================================
+  // BUILD
+  // =========================================================
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+      BuildContext context,
+      ) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FF),
+      backgroundColor:
+      background,
+
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF5F6FF),
+        backgroundColor:
+        background,
         elevation: 0,
-        titleSpacing: 16,
-        title: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [
-                    Color(0xFF6C5CE7),
-                    Color(0xFF8E7BFF),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(
-                Icons.auto_awesome,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Text(
-              'NIMO AI',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1E1E1E),
-              ),
-            ),
-          ],
+        title: const Text(
+          'NIMO AI',
+          style: TextStyle(
+            color: Colors.black,
+            fontWeight:
+            FontWeight.bold,
+          ),
         ),
       ),
+
       body: Column(
         children: [
-          Expanded(child: _buildBody()),
-          _buildInputArea(),
+          Expanded(
+            child: CustomScrollView(
+              controller:
+              _scrollController,
+              slivers: [
+                SliverToBoxAdapter(
+                  child: _heroCard(),
+                ),
+
+                SliverPadding(
+                  padding:
+                  const EdgeInsets
+                      .symmetric(
+                    horizontal: 16,
+                  ),
+                  sliver: SliverList(
+                    delegate:
+                    SliverChildListDelegate(
+                      [
+                        _featureCard(
+                          icon: Icons
+                              .chat_bubble_outline,
+                          title:
+                          'Smart Replies',
+                          subtitle:
+                          'Generate intelligent replies',
+                          onTap:
+                              () =>
+                              _selectFeature(
+                                'reply',
+                              ),
+                        ),
+
+                        _featureCard(
+                          icon: Icons
+                              .translate,
+                          title:
+                          'Translation',
+                          subtitle:
+                          'Translate any text',
+                          onTap:
+                              () =>
+                              _selectFeature(
+                                'translate',
+                              ),
+                        ),
+
+                        _featureCard(
+                          icon: Icons
+                              .edit_note,
+                          title:
+                          'Rewrite Messages',
+                          subtitle:
+                          'Rewrite professionally',
+                          onTap:
+                              () =>
+                              _selectFeature(
+                                'rewrite',
+                              ),
+                        ),
+
+                        _featureCard(
+                          icon: Icons
+                              .email_outlined,
+                          title:
+                          'Email Writing',
+                          subtitle:
+                          'Write professional emails',
+                          onTap:
+                              () =>
+                              _selectFeature(
+                                'email',
+                              ),
+                        ),
+
+                        _featureCard(
+                          icon:
+                          Icons.help_outline,
+                          title:
+                          'General Q&A',
+                          subtitle:
+                          'Ask any question',
+                          onTap:
+                              () =>
+                              _selectFeature(
+                                'qa',
+                              ),
+                        ),
+
+                        const SizedBox(
+                          height: 20,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                SliverList(
+                  delegate:
+                  SliverChildBuilderDelegate(
+                        (
+                        context,
+                        index,
+                        ) {
+                      return _messageBubble(
+                        _messages[index],
+                      );
+                    },
+                    childCount:
+                    _messages.length,
+                  ),
+                ),
+
+                const SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: 20,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          _inputArea(),
         ],
       ),
     );
   }
+
+  // =========================================================
+  // DISPOSE
+  // =========================================================
 
   @override
   void dispose() {
@@ -430,6 +841,10 @@ class _AIScreenState extends State<AIScreen> {
     super.dispose();
   }
 }
+
+// =========================================================
+// AI MESSAGE MODEL
+// =========================================================
 
 class _AIMessage {
   final bool isMe;

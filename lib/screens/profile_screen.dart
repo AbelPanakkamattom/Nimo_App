@@ -43,9 +43,9 @@ class _ProfileScreenState
     loadProfile();
   }
 
-  // =========================================================
-  // LOAD PROFILE
-  // =========================================================
+// =========================================================
+// LOAD PROFILE
+// =========================================================
 
   Future<void> loadProfile() async {
     if (!mounted) return;
@@ -55,8 +55,7 @@ class _ProfileScreenState
     });
 
     try {
-      final user =
-          client.auth.currentUser;
+      final user = client.auth.currentUser;
 
       if (user == null) {
         if (!mounted) return;
@@ -67,134 +66,57 @@ class _ProfileScreenState
       }
 
       // Ensure profile exists
-      await ProfileService
-          .createProfileIfNotExists();
+      await ProfileService.createProfileIfNotExists();
 
-      // Load profile
+      // Load profile data
       final profileData =
-      await ProfileService
-          .getMyProfile();
+      await ProfileService.getMyProfile();
 
-      final safeProfile =
-          profileData ??
-              {
-                'id': user.id,
-                'email':
-                user.email ??
-                    '',
-                'name':
-                user
-                    .userMetadata?['name']
-                    ?.toString() ??
-                    user.email
-                        ?.split('@')
-                        .first ??
-                    'NIMO User',
-                'bio':
-                user
-                    .userMetadata?['bio']
-                    ?.toString() ??
-                    '',
-                'description':
-                user
-                    .userMetadata?['bio']
-                    ?.toString() ??
-                    '',
-                'avatar_url':
-                user
-                    .userMetadata?['avatar_url']
-                    ?.toString() ??
-                    '',
-              };
+      final safeProfile = profileData ??
+          {
+            'id': user.id,
+            'email': user.email ?? '',
+            'name': user.userMetadata?['name']
+                ?.toString() ??
+                user.email
+                    ?.split('@')
+                    .first ??
+                'NIMO User',
+            'bio': user.userMetadata?['bio']
+                ?.toString() ??
+                '',
+            'description':
+            user.userMetadata?['bio']
+                ?.toString() ??
+                '',
+            'avatar_url':
+            user.userMetadata?[
+            'avatar_url']
+                ?.toString() ??
+                '',
+          };
 
-      // Load message statistics
-      int totalChats = 0;
-      int totalMedia = 0;
-
-      try {
-        final messages =
-        await client
-            .from('messages')
-            .select(
-          'sender_id, receiver_id, type, message_type',
-        );
-
-        final uniqueChats =
-        <String>{};
-
-        for (final message
-        in messages) {
-          final senderId =
-          message['sender_id']
-              ?.toString();
-          final receiverId =
-          message['receiver_id']
-              ?.toString();
-
-          if (senderId ==
-              null ||
-              receiverId ==
-                  null) {
-            continue;
-          }
-
-          if (senderId ==
-              user.id ||
-              receiverId ==
-                  user.id) {
-            final otherUserId =
-            senderId ==
-                user.id
-                ? receiverId
-                : senderId;
-
-            uniqueChats.add(
-              otherUserId,
-            );
-
-            final type =
-            (message['type'] ??
-                message['message_type'] ??
-                'text')
-                .toString()
-                .toLowerCase();
-
-            if (type ==
-                'image' ||
-                type ==
-                    'video' ||
-                type ==
-                    'audio' ||
-                type ==
-                    'document' ||
-                type ==
-                    'file') {
-              totalMedia++;
-            }
-          }
-        }
-
-        totalChats =
-            uniqueChats.length;
-      } catch (e) {
-        debugPrint(
-          'STATS ERROR: $e',
-        );
-      }
+      // Load all statistics from ProfileService
+      final stats =
+      await ProfileService.getProfileStats();
 
       if (!mounted) return;
 
       setState(() {
         profile =
-        Map<String,
-            dynamic>.from(
+        Map<String, dynamic>.from(
           safeProfile,
         );
+
         chatsCount =
-            totalChats;
-        callsCount = 0;
+            stats['chats'] ?? 0;
+
+        callsCount =
+            stats['calls'] ?? 0;
+
         mediaCount =
-            totalMedia;
+            stats['media'] ?? 0;
+
         loading = false;
       });
     } catch (e) {
@@ -215,8 +137,7 @@ class _ProfileScreenState
             'Failed to load profile',
           ),
           behavior:
-          SnackBarBehavior
-              .floating,
+          SnackBarBehavior.floating,
         ),
       );
     }

@@ -19,6 +19,9 @@ class ChatInputWidget extends StatelessWidget {
   /// Pick and send video
   final Future<void> Function()? onVideo;
 
+  /// Pick and send audio file
+  final Future<void> Function()? onAudio;
+
   /// Voice recording / placeholder
   final VoidCallback? onVoice;
 
@@ -33,6 +36,7 @@ class ChatInputWidget extends StatelessWidget {
     this.onImage,
     this.onDocument,
     this.onVideo,
+    this.onAudio,
     this.onVoice,
     this.onTyping,
   });
@@ -80,10 +84,12 @@ class ChatInputWidget extends StatelessWidget {
   Widget _buildIconButton({
     required IconData icon,
     required VoidCallback? onPressed,
+    String? tooltip,
   }) {
     return IconButton(
       splashRadius: 22,
       visualDensity: VisualDensity.compact,
+      tooltip: tooltip,
       onPressed: isSending ? null : onPressed,
       icon: Icon(
         icon,
@@ -157,7 +163,12 @@ class ChatInputWidget extends StatelessWidget {
           bottom: MediaQuery.of(context).viewInsets.bottom,
         ),
         child: Container(
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+          padding: const EdgeInsets.fromLTRB(
+            8,
+            8,
+            8,
+            8,
+          ),
           decoration: BoxDecoration(
             color: Colors.white,
             boxShadow: [
@@ -169,12 +180,14 @@ class ChatInputWidget extends StatelessWidget {
             ],
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment:
+            CrossAxisAlignment.end,
             children: [
               // Image
               if (onImage != null)
                 _buildIconButton(
                   icon: Icons.image_outlined,
+                  tooltip: 'Image',
                   onPressed: () => onImage!(),
                 ),
 
@@ -182,20 +195,34 @@ class ChatInputWidget extends StatelessWidget {
               if (onDocument != null)
                 _buildIconButton(
                   icon: Icons.attach_file,
+                  tooltip: 'Document',
                   onPressed: () => onDocument!(),
                 ),
 
               // Video
               if (onVideo != null)
                 _buildIconButton(
-                  icon: Icons.videocam_outlined,
+                  icon:
+                  Icons.videocam_outlined,
+                  tooltip: 'Video',
                   onPressed: () => onVideo!(),
+                ),
+
+              // Audio
+              if (onAudio != null)
+                _buildIconButton(
+                  icon:
+                  Icons.audiotrack_rounded,
+                  tooltip: 'Audio',
+                  onPressed: () => onAudio!(),
                 ),
 
               // Voice
               if (onVoice != null)
                 _buildIconButton(
-                  icon: Icons.mic_none_rounded,
+                  icon:
+                  Icons.mic_none_rounded,
+                  tooltip: 'Voice',
                   onPressed: onVoice,
                 ),
 
@@ -206,10 +233,14 @@ class ChatInputWidget extends StatelessWidget {
                   enabled: !isSending,
                   minLines: 1,
                   maxLines: 5,
-                  keyboardType: TextInputType.multiline,
-                  textInputAction: TextInputAction.newline,
+                  keyboardType:
+                  TextInputType.multiline,
+                  textInputAction:
+                  TextInputAction
+                      .newline,
                   onChanged: onTyping,
-                  decoration: _inputDecoration(),
+                  decoration:
+                  _inputDecoration(),
                 ),
               ),
 

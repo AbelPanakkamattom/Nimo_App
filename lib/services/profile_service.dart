@@ -11,7 +11,7 @@ class ProfileService {
       Supabase.instance.client;
 
   // =========================================================
-  // COLORS / CONSTANTS
+  // CONSTANTS
   // =========================================================
 
   static const String profileTable =
@@ -40,10 +40,11 @@ class ProfileService {
   static Future<Map<String, dynamic>?>
   getMyProfile() async {
     try {
-      if (!isLoggedIn) return null;
+      if (!isLoggedIn) {
+        return null;
+      }
 
-      final response =
-      await supabase
+      final response = await supabase
           .from(profileTable)
           .select()
           .eq('id', currentUserId)
@@ -52,14 +53,10 @@ class ProfileService {
       if (response == null) {
         await createProfileIfNotExists();
 
-        final retry =
-        await supabase
+        final retry = await supabase
             .from(profileTable)
             .select()
-            .eq(
-          'id',
-          currentUserId,
-        )
+            .eq('id', currentUserId)
             .maybeSingle();
 
         if (retry == null) {
@@ -95,8 +92,7 @@ class ProfileService {
         return null;
       }
 
-      final response =
-      await supabase
+      final response = await supabase
           .from(profileTable)
           .select()
           .eq('id', userId)
@@ -138,8 +134,7 @@ class ProfileService {
         return null;
       }
 
-      return Map<String,
-          dynamic>.from(
+      return Map<String, dynamic>.from(
         rows.first,
       );
     });
@@ -156,14 +151,10 @@ class ProfileService {
         return false;
       }
 
-      final existing =
-      await supabase
+      final existing = await supabase
           .from(profileTable)
           .select()
-          .eq(
-        'id',
-        currentUserId,
-      )
+          .eq('id', currentUserId)
           .maybeSingle();
 
       if (existing != null) {
@@ -171,7 +162,6 @@ class ProfileService {
       }
 
       final user = currentUser!;
-
       final metadata =
           user.userMetadata ?? {};
 
@@ -199,27 +189,23 @@ class ProfileService {
               ?.toString() ??
               '';
 
+      final now = DateTime.now()
+          .toUtc()
+          .toIso8601String();
+
       await supabase
           .from(profileTable)
           .insert({
         'id': user.id,
-        'email':
-        user.email ?? '',
+        'email': user.email ?? '',
         'name': name,
         'bio': bio,
         'description': bio,
-        'avatar_url':
-        avatarUrl,
+        'avatar_url': avatarUrl,
         'is_online': true,
         'typing_to': '',
-        'last_seen':
-        DateTime.now()
-            .toUtc()
-            .toIso8601String(),
-        'updated_at':
-        DateTime.now()
-            .toUtc()
-            .toIso8601String(),
+        'last_seen': now,
+        'updated_at': now,
       });
 
       return true;
@@ -275,14 +261,11 @@ class ProfileService {
           .upsert({
         'id': currentUserId,
         'email':
-        currentUser?.email ??
-            '',
+        currentUser?.email ?? '',
         'name': trimmedName,
         'bio': finalBio,
-        'description':
-        finalBio,
-        'avatar_url':
-        finalAvatar,
+        'description': finalBio,
+        'avatar_url': finalAvatar,
         'updated_at':
         DateTime.now()
             .toUtc()
@@ -293,8 +276,7 @@ class ProfileService {
           .updateUser(
         UserAttributes(
           data: {
-            'name':
-            trimmedName,
+            'name': trimmedName,
             'bio': finalBio,
             'avatar_url':
             finalAvatar,
@@ -315,8 +297,7 @@ class ProfileService {
   // UPLOAD AVATAR
   // =========================================================
 
-  static Future<String?>
-  uploadAvatar(
+  static Future<String?> uploadAvatar(
       File file,
       ) async {
     try {
@@ -366,21 +347,21 @@ class ProfileService {
       bool online,
       ) async {
     try {
-      if (!isLoggedIn) return;
+      if (!isLoggedIn) {
+        return;
+      }
+
+      final now = DateTime.now()
+          .toUtc()
+          .toIso8601String();
 
       await supabase
           .from(profileTable)
           .upsert({
         'id': currentUserId,
         'is_online': online,
-        'last_seen':
-        DateTime.now()
-            .toUtc()
-            .toIso8601String(),
-        'updated_at':
-        DateTime.now()
-            .toUtc()
-            .toIso8601String(),
+        'last_seen': now,
+        'updated_at': now,
       });
     } catch (e) {
       debugPrint(
@@ -458,7 +439,6 @@ class ProfileService {
       debugPrint(
         'LAST SEEN ERROR: $e',
       );
-
       return 'offline';
     }
   }
@@ -472,7 +452,9 @@ class ProfileService {
     required bool isTyping,
   }) async {
     try {
-      if (!isLoggedIn) return;
+      if (!isLoggedIn) {
+        return;
+      }
 
       if (receiverId
           .trim()
@@ -500,8 +482,7 @@ class ProfileService {
     }
   }
 
-  static Stream<bool>
-  typingStream(
+  static Stream<bool> typingStream(
       String otherUserId,
       ) {
     if (!isLoggedIn ||
@@ -523,11 +504,9 @@ class ProfileService {
       final profile =
           rows.first;
 
-      return profile[
-      'typing_to'] ==
+      return profile['typing_to'] ==
           currentUserId;
-    })
-        .distinct();
+    }).distinct();
   }
 
   // =========================================================
@@ -543,9 +522,7 @@ class ProfileService {
       }
 
       await supabase
-          .from(
-        'blocked_users',
-      )
+          .from('blocked_users')
           .upsert({
         'blocker_id':
         currentUserId,
@@ -571,9 +548,7 @@ class ProfileService {
       }
 
       await supabase
-          .from(
-        'blocked_users',
-      )
+          .from('blocked_users')
           .delete()
           .eq(
         'blocker_id',
@@ -688,6 +663,154 @@ class ProfileService {
         'TOTAL USERS ERROR: $e',
       );
       return 0;
+    }
+  }
+
+  // =========================================================
+  // PROFILE STATISTICS
+  // =========================================================
+
+  static Future<int>
+  getCallCount() async {
+    try {
+      if (!isLoggedIn) {
+        return 0;
+      }
+
+      final response =
+      await supabase
+          .from('calls')
+          .select('id')
+          .or(
+        'caller_id.eq.$currentUserId,receiver_id.eq.$currentUserId',
+      );
+
+      return response.length;
+    } catch (e) {
+      debugPrint(
+        'GET CALL COUNT ERROR: $e',
+      );
+      return 0;
+    }
+  }
+
+  static Future<int>
+  getChatCount() async {
+    try {
+      if (!isLoggedIn) {
+        return 0;
+      }
+
+      final response =
+      await supabase
+          .from('messages')
+          .select(
+        'sender_id, receiver_id',
+      )
+          .or(
+        'sender_id.eq.$currentUserId,receiver_id.eq.$currentUserId',
+      );
+
+      final Set<String>
+      chatUsers = {};
+
+      for (final row in response) {
+        final senderId =
+            row['sender_id']
+                ?.toString() ??
+                '';
+
+        final receiverId =
+            row['receiver_id']
+                ?.toString() ??
+                '';
+
+        if (senderId ==
+            currentUserId) {
+          if (receiverId
+              .isNotEmpty) {
+            chatUsers.add(
+              receiverId,
+            );
+          }
+        } else if (receiverId ==
+            currentUserId) {
+          if (senderId
+              .isNotEmpty) {
+            chatUsers.add(
+              senderId,
+            );
+          }
+        }
+      }
+
+      return chatUsers.length;
+    } catch (e) {
+      debugPrint(
+        'GET CHAT COUNT ERROR: $e',
+      );
+      return 0;
+    }
+  }
+
+  static Future<int>
+  getMediaCount() async {
+    try {
+      if (!isLoggedIn) {
+        return 0;
+      }
+
+      final response =
+      await supabase
+          .from('messages')
+          .select('id, type')
+          .or(
+        'sender_id.eq.$currentUserId,receiver_id.eq.$currentUserId',
+      )
+          .inFilter(
+        'type',
+        [
+          'image',
+          'video',
+          'document',
+          'audio',
+        ],
+      );
+
+      return response.length;
+    } catch (e) {
+      debugPrint(
+        'GET MEDIA COUNT ERROR: $e',
+      );
+      return 0;
+    }
+  }
+
+  static Future<Map<String, int>>
+  getProfileStats() async {
+    try {
+      final results =
+      await Future.wait([
+        getChatCount(),
+        getCallCount(),
+        getMediaCount(),
+      ]);
+
+      return {
+        'chats': results[0],
+        'calls': results[1],
+        'media': results[2],
+      };
+    } catch (e) {
+      debugPrint(
+        'GET PROFILE STATS ERROR: $e',
+      );
+
+      return {
+        'chats': 0,
+        'calls': 0,
+        'media': 0,
+      };
     }
   }
 }

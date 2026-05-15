@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../providers/theme_provider.dart';
 import 'auth_screen.dart';
 import 'blocked_users_screen.dart';
 import 'edit_profile_screen.dart';
@@ -24,11 +26,8 @@ class _SettingsScreenState
   Color(0xFF6C5CE7);
   static const Color secondary =
   Color(0xFF8E7BFF);
-  static const Color background =
-  Color(0xFFF5F6FF);
 
   bool notifications = true;
-  bool darkMode = false;
   bool readReceipts = true;
 
   Map<String, dynamic> profile = {};
@@ -102,7 +101,8 @@ class _SettingsScreenState
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
-        builder: (_) => const AuthScreen(),
+        builder: (_) =>
+        const AuthScreen(),
       ),
           (_) => false,
     );
@@ -136,7 +136,8 @@ class _SettingsScreenState
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(
+          shape:
+          RoundedRectangleBorder(
             borderRadius:
             BorderRadius.circular(
               24,
@@ -148,30 +149,31 @@ class _SettingsScreenState
           ),
           actions: [
             TextButton(
-              onPressed:
-                  () => Navigator.pop(
-                dialogContext,
-                false,
-              ),
-              child: const Text(
-                'Cancel',
-              ),
+              onPressed: () =>
+                  Navigator.pop(
+                    dialogContext,
+                    false,
+                  ),
+              child:
+              const Text('Cancel'),
             ),
             ElevatedButton(
               style:
-              ElevatedButton.styleFrom(
+              ElevatedButton
+                  .styleFrom(
                 backgroundColor:
                 Colors.red,
               ),
-              onPressed:
-                  () => Navigator.pop(
-                dialogContext,
-                true,
-              ),
+              onPressed: () =>
+                  Navigator.pop(
+                    dialogContext,
+                    true,
+                  ),
               child: const Text(
                 'Logout',
                 style: TextStyle(
-                  color: Colors.white,
+                  color:
+                  Colors.white,
                 ),
               ),
             ),
@@ -194,10 +196,10 @@ class _SettingsScreenState
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder:
-            (_) => EditProfileScreen(
-          profile: profile,
-        ),
+        builder: (_) =>
+            EditProfileScreen(
+              profile: profile,
+            ),
       ),
     );
 
@@ -246,26 +248,31 @@ class _SettingsScreenState
     }
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding:
+      const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient:
+        const LinearGradient(
           colors: [
             primary,
             secondary,
           ],
-          begin: Alignment.topLeft,
-          end:
-          Alignment.bottomRight,
+          begin:
+          Alignment.topLeft,
+          end: Alignment
+              .bottomRight,
         ),
         borderRadius:
-        BorderRadius.circular(28),
+        BorderRadius.circular(
+          28,
+        ),
         boxShadow: [
           BoxShadow(
-            color: primary.withAlpha(
-              70,
-            ),
+            color: primary
+                .withAlpha(70),
             blurRadius: 24,
-            offset: const Offset(
+            offset:
+            const Offset(
               0,
               10,
             ),
@@ -278,17 +285,20 @@ class _SettingsScreenState
             radius: 34,
             backgroundColor:
             Colors.white
-                .withAlpha(40),
+                .withAlpha(
+              40,
+            ),
             backgroundImage:
             imageProvider,
-            child: imageProvider ==
+            child:
+            imageProvider ==
                 null
                 ? Text(
               initial,
               style:
               const TextStyle(
-                color:
-                Colors.white,
+                color: Colors
+                    .white,
                 fontSize:
                 28,
                 fontWeight:
@@ -298,9 +308,9 @@ class _SettingsScreenState
             )
                 : null,
           ),
-
-          const SizedBox(width: 16),
-
+          const SizedBox(
+            width: 16,
+          ),
           Expanded(
             child: Column(
               crossAxisAlignment:
@@ -315,8 +325,8 @@ class _SettingsScreenState
                       .ellipsis,
                   style:
                   const TextStyle(
-                    color:
-                    Colors.white,
+                    color: Colors
+                        .white,
                     fontSize: 22,
                     fontWeight:
                     FontWeight
@@ -334,20 +344,20 @@ class _SettingsScreenState
                       .ellipsis,
                   style:
                   const TextStyle(
-                    color:
-                    Colors.white70,
+                    color: Colors
+                        .white70,
                   ),
                 ),
               ],
             ),
           ),
-
           IconButton(
             onPressed:
             openEditProfile,
             icon: const Icon(
               Icons.edit,
-              color: Colors.white,
+              color:
+              Colors.white,
             ),
           ),
         ],
@@ -360,19 +370,28 @@ class _SettingsScreenState
   // =========================================================
 
   Widget buildSectionTitle(
-      String title) {
+      String title,
+      ) {
+    final isDark =
+        Theme.of(context)
+            .brightness ==
+            Brightness.dark;
+
     return Padding(
-      padding: const EdgeInsets.only(
+      padding:
+      const EdgeInsets.only(
         top: 4,
         bottom: 14,
       ),
       child: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 18,
           fontWeight:
           FontWeight.bold,
-          color: Colors.black87,
+          color: isDark
+              ? Colors.white
+              : Colors.black87,
         ),
       ),
     );
@@ -392,25 +411,36 @@ class _SettingsScreenState
     Color iconBackground =
     const Color(0xFFF0EDFF),
   }) {
+    final theme =
+    Theme.of(context);
+    final isDark =
+        theme.brightness ==
+            Brightness.dark;
+
     return Container(
       margin:
       const EdgeInsets.only(
         bottom: 14,
       ),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius:
         BorderRadius.circular(
           22,
         ),
         boxShadow: [
           BoxShadow(
-            color:
-            Colors.black.withAlpha(
+            color: isDark
+                ? primary.withAlpha(
+              20,
+            )
+                : Colors.black
+                .withAlpha(
               8,
             ),
             blurRadius: 12,
-            offset: const Offset(
+            offset:
+            const Offset(
               0,
               4,
             ),
@@ -420,18 +450,21 @@ class _SettingsScreenState
       child: ListTile(
         onTap: onTap,
         contentPadding:
-        const EdgeInsets.symmetric(
+        const EdgeInsets
+            .symmetric(
           horizontal: 16,
           vertical: 6,
         ),
         leading: Container(
           width: 46,
           height: 46,
-          decoration: BoxDecoration(
+          decoration:
+          BoxDecoration(
             color:
             iconBackground,
             borderRadius:
-            BorderRadius.circular(
+            BorderRadius
+                .circular(
               14,
             ),
           ),
@@ -442,10 +475,15 @@ class _SettingsScreenState
         ),
         title: Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 15,
             fontWeight:
-            FontWeight.w600,
+            FontWeight
+                .w600,
+            color: theme
+                .textTheme
+                .bodyLarge
+                ?.color,
           ),
         ),
         subtitle:
@@ -455,9 +493,13 @@ class _SettingsScreenState
           subtitle,
           style:
           TextStyle(
-            color: Colors
-                .grey
-                .shade600,
+            color: theme
+                .textTheme
+                .bodyMedium
+                ?.color
+                ?.withAlpha(
+              180,
+            ),
           ),
         ),
         trailing: trailing,
@@ -470,10 +512,15 @@ class _SettingsScreenState
   // =========================================================
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+      BuildContext context,
+      ) {
+    final theme =
+    Theme.of(context);
+
     return Scaffold(
       backgroundColor:
-      background,
+      theme.scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor:
         Colors.transparent,
@@ -481,7 +528,9 @@ class _SettingsScreenState
         surfaceTintColor:
         Colors.transparent,
         foregroundColor:
-        Colors.black,
+        theme
+            .appBarTheme
+            .foregroundColor,
         title: const Text(
           'Settings',
           style: TextStyle(
@@ -492,7 +541,8 @@ class _SettingsScreenState
       ),
       body: ListView(
         padding:
-        const EdgeInsets.all(20),
+        const EdgeInsets
+            .all(20),
         children: [
           // PROFILE CARD
           buildProfileCard(),
@@ -512,7 +562,8 @@ class _SettingsScreenState
             'Edit Profile',
             subtitle:
             'Update your personal information',
-            trailing: const Icon(
+            trailing:
+            const Icon(
               Icons
                   .arrow_forward_ios,
               size: 16,
@@ -523,12 +574,14 @@ class _SettingsScreenState
 
           buildTile(
             icon:
-            Icons.star_border,
+            Icons
+                .star_border,
             title:
             'Starred Messages',
             subtitle:
             'View saved messages',
-            trailing: const Icon(
+            trailing:
+            const Icon(
               Icons
                   .arrow_forward_ios,
               size: 16,
@@ -551,7 +604,8 @@ class _SettingsScreenState
             'Blocked Users',
             subtitle:
             'Manage blocked contacts',
-            trailing: const Icon(
+            trailing:
+            const Icon(
               Icons
                   .arrow_forward_ios,
               size: 16,
@@ -578,8 +632,8 @@ class _SettingsScreenState
           ),
 
           buildTile(
-            icon:
-            Icons.notifications,
+            icon: Icons
+                .notifications,
             title:
             'Notifications',
             subtitle:
@@ -589,9 +643,8 @@ class _SettingsScreenState
               notifications,
               activeThumbColor:
               primary,
-              onChanged: (
-                  value,
-                  ) {
+              onChanged:
+                  (value) {
                 setState(() {
                   notifications =
                       value;
@@ -612,9 +665,8 @@ class _SettingsScreenState
               readReceipts,
               activeThumbColor:
               primary,
-              onChanged: (
-                  value,
-                  ) {
+              onChanged:
+                  (value) {
                 setState(() {
                   readReceipts =
                       value;
@@ -623,27 +675,45 @@ class _SettingsScreenState
             ),
           ),
 
+          // DARK MODE (WORKING)
           buildTile(
             icon:
             Icons.dark_mode,
             title:
             'Dark Mode',
             subtitle:
-            'Coming soon',
-            trailing: Switch(
-              value: darkMode,
-              activeThumbColor:
-              primary,
-              onChanged: (
-                  value,
+            'Switch between light and dark theme',
+            trailing:
+            Consumer<
+                ThemeProvider>(
+              builder: (
+                  context,
+                  themeProvider,
+                  child,
                   ) {
-                setState(() {
-                  darkMode =
-                      value;
-                });
+                return Switch(
+                  value:
+                  themeProvider
+                      .isDarkMode,
+                  activeThumbColor:
+                  primary,
+                  onChanged:
+                      (value) async {
+                    await themeProvider
+                        .toggleTheme(
+                      value,
+                    );
 
-                showMessage(
-                  'Dark mode will be available soon.',
+                    if (!mounted) {
+                      return;
+                    }
+
+                    showMessage(
+                      value
+                          ? 'Dark mode enabled'
+                          : 'Light mode enabled',
+                    );
+                  },
                 );
               },
             ),
@@ -665,7 +735,8 @@ class _SettingsScreenState
             'Contact Support',
             subtitle:
             'Send us an email',
-            trailing: const Icon(
+            trailing:
+            const Icon(
               Icons
                   .arrow_forward_ios,
               size: 16,
@@ -683,8 +754,8 @@ class _SettingsScreenState
           ),
 
           buildTile(
-            icon:
-            Icons.info_outline,
+            icon: Icons
+                .info_outline,
             title:
             'About NIMO',
             subtitle:
@@ -699,11 +770,13 @@ class _SettingsScreenState
           SizedBox(
             height: 56,
             child:
-            ElevatedButton.icon(
+            ElevatedButton
+                .icon(
               onPressed:
               confirmLogout,
               style:
-              ElevatedButton.styleFrom(
+              ElevatedButton
+                  .styleFrom(
                 backgroundColor:
                 Colors.red,
                 elevation: 0,
@@ -715,20 +788,24 @@ class _SettingsScreenState
                   ),
                 ),
               ),
-              icon: const Icon(
+              icon:
+              const Icon(
                 Icons.logout,
-                color:
-                Colors.white,
+                color: Colors
+                    .white,
               ),
-              label: const Text(
+              label:
+              const Text(
                 'Logout',
-                style: TextStyle(
-                  color:
-                  Colors.white,
+                style:
+                TextStyle(
+                  color: Colors
+                      .white,
                   fontWeight:
                   FontWeight
                       .bold,
-                  fontSize: 16,
+                  fontSize:
+                  16,
                 ),
               ),
             ),

@@ -1,9 +1,16 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:zego_uikit/zego_uikit.dart';
 import 'package:zego_uikit_signaling_plugin/zego_uikit_signaling_plugin.dart';
+
+import 'firebase_options.dart';
+
+import 'providers/theme_provider.dart';
 
 import 'screens/auth_screen.dart';
 import 'screens/home_screen.dart';
@@ -13,13 +20,28 @@ import 'services/notification_service.dart';
 import 'services/online_service.dart';
 import 'services/zego_call_service.dart';
 
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(
+    RemoteMessage message,
+    ) async {
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  await NotificationService
+      .firebaseMessagingBackgroundHandler(
+    message,
+  );
+}
+
+// =========================================================
+// MAIN
+// =========================================================
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // =========================================================
-  // INSTALL ZEGO SIGNALING PLUGIN GLOBALLY
-  // THIS IS REQUIRED FOR CALL INVITATIONS TO WORK
-  // =========================================================
+  // Install Zego signaling plugin
   ZegoUIKit().installPlugins([
     ZegoUIKitSignalingPlugin(),
   ]);
@@ -33,56 +55,94 @@ Future<void> main() async {
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark,
-      statusBarBrightness: Brightness.light,
     ),
   );
 
   // Load .env
   try {
     await dotenv.load(fileName: '.env');
+    debugPrint('ENV LOADED');
   } catch (e) {
     debugPrint('ENV LOAD ERROR: $e');
   }
 
   // Initialize Supabase
   try {
-    final url = dotenv.env['SUPABASE_URL'];
-    final anonKey = dotenv.env['SUPABASE_ANON_KEY'];
+    final url =
+        dotenv.env['SUPABASE_URL'] ?? '';
+    final anonKey =
+        dotenv.env['SUPABASE_ANON_KEY'] ?? '';
 
-    if (url != null &&
-        url.isNotEmpty &&
-        anonKey != null &&
-        anonKey.isNotEmpty) {
-      await Supabase.initialize(
-        url: url,
-        anonKey: anonKey,
-        debug: false,
-      );
-    } else {
-      debugPrint(
+    if (url.isEmpty || anonKey.isEmpty) {
+      throw Exception(
         'SUPABASE_URL or SUPABASE_ANON_KEY missing in .env',
       );
     }
+
+    await Supabase.initialize(
+      url: url,
+      anonKey: anonKey,
+      debug: false,
+    );
+
+    debugPrint('SUPABASE INITIALIZED');
   } catch (e) {
     debugPrint('SUPABASE INIT ERROR: $e');
   }
 
+  // Initialize Firebase
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+
+    debugPrint('FIREBASE INITIALIZED');
+  } catch (e) {
+    debugPrint('FIREBASE INIT ERROR: $e');
+  }
+
+  // Background push handler
+  FirebaseMessaging.onBackgroundMessage(
+    _firebaseMessagingBackgroundHandler,
+  );
+
   // Initialize notifications
   try {
     await NotificationService.initialize();
+    await NotificationService.saveTokenToSupabase();
+    NotificationService.listenForTokenRefresh();
+    debugPrint('NOTIFICATIONS INITIALIZED');
   } catch (e) {
     debugPrint('NOTIFICATION INIT ERROR: $e');
   }
 
-  // Register ZEGO navigator key
+  // Register Zego plugins
   ZegoCallService.registerPlugins();
 
-  runApp(const NimoApp());
+  // Check Gemini API key
+  final geminiApiKey =
+  dotenv.env['GEMINI_API_KEY'];
+
+  if (geminiApiKey == null ||
+      geminiApiKey.isEmpty) {
+    debugPrint(
+      'WARNING: GEMINI_API_KEY missing',
+    );
+  } else {
+    debugPrint('GEMINI API KEY FOUND');
+  }
+
+  // Run App with ThemeProvider
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => ThemeProvider(),
+      child: const NimoApp(),
+    ),
+  );
 }
 
 // =========================================================
-// APP ROOT
+// ROOT APP
 // =========================================================
 
 class NimoApp extends StatelessWidget {
@@ -90,24 +150,43 @@ class NimoApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider =
+    Provider.of<ThemeProvider>(context);
+
+    // Wait until theme is loaded
+    if (!themeProvider.isLoaded) {
+      return const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: SplashScreen(),
+      );
+    }
+
     return MaterialApp(
       title: 'NIMO',
       debugShowCheckedModeBanner: false,
-      navigatorKey: ZegoCallService.navigatorKey,
-      theme: _buildTheme(),
+      navigatorKey:
+      ZegoCallService.navigatorKey,
+      theme: _buildLightTheme(),
+      darkTheme: _buildDarkTheme(),
+      themeMode: themeProvider.themeMode,
       home: const AppBootstrapper(),
-      builder: (context, child) {
-        return child ?? const SizedBox();
+      builder: (
+          BuildContext context,
+          Widget? child,
+          ) {
+        return child ??
+            const SizedBox.shrink();
       },
     );
   }
 }
 
 // =========================================================
-// APP BOOTSTRAPPER
+// APP INITIALIZATION
 // =========================================================
 
-class AppBootstrapper extends StatefulWidget {
+class AppBootstrapper
+    extends StatefulWidget {
   const AppBootstrapper({super.key});
 
   @override
@@ -115,7 +194,8 @@ class AppBootstrapper extends StatefulWidget {
       _AppBootstrapperState();
 }
 
-class _AppBootstrapperState extends State<AppBootstrapper>
+class _AppBootstrapperState
+    extends State<AppBootstrapper>
     with WidgetsBindingObserver {
   bool _initialized = false;
   bool _hasError = false;
@@ -124,7 +204,11 @@ class _AppBootstrapperState extends State<AppBootstrapper>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
+
+    WidgetsBinding.instance.addObserver(
+      this,
+    );
+
     _initialize();
   }
 
@@ -132,9 +216,13 @@ class _AppBootstrapperState extends State<AppBootstrapper>
     try {
       await OnlineService.setOnline();
       await _initializeZego();
+      await NotificationService
+          .saveTokenToSupabase();
 
       await Future.delayed(
-        const Duration(milliseconds: 1800),
+        const Duration(
+          milliseconds: 1800,
+        ),
       );
 
       if (!mounted) return;
@@ -154,37 +242,45 @@ class _AppBootstrapperState extends State<AppBootstrapper>
 
   Future<void> _initializeZego() async {
     try {
-      final user =
-          Supabase.instance.client.auth.currentUser;
+      final user = Supabase
+          .instance
+          .client
+          .auth
+          .currentUser;
 
       if (user == null) return;
 
+      final metadata =
+          user.userMetadata ?? {};
+
       final userName =
-      user.userMetadata?['full_name']
+      (metadata['full_name']
           ?.toString()
           .trim()
           .isNotEmpty ==
-          true
-          ? user.userMetadata!['full_name']
+          true)
+          ? metadata['full_name']
           .toString()
           .trim()
-          : user.userMetadata?['name']
+          : (metadata['name']
           ?.toString()
           .trim()
           .isNotEmpty ==
-          true
-          ? user.userMetadata!['name']
+          true)
+          ? metadata['name']
           .toString()
           .trim()
-          : user.email?.split('@').first ??
+          : user.email
+          ?.split('@')
+          .first ??
           'NIMO User';
 
-      // Pass the original Supabase UUID.
-      // ZegoCallService converts it to a ZEGO-safe ID.
       await ZegoCallService.init(
         userID: user.id,
         userName: userName,
       );
+
+      debugPrint('ZEGO INITIALIZED');
     } catch (e) {
       debugPrint('ZEGO INIT ERROR: $e');
     }
@@ -210,8 +306,11 @@ class _AppBootstrapperState extends State<AppBootstrapper>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    WidgetsBinding.instance
+        .removeObserver(this);
+
     OnlineService.dispose();
+
     super.dispose();
   }
 
@@ -241,8 +340,11 @@ class AuthGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     try {
-      final session =
-          Supabase.instance.client.auth.currentSession;
+      final session = Supabase
+          .instance
+          .client
+          .auth
+          .currentSession;
 
       if (session != null) {
         return const HomeScreen();
@@ -267,77 +369,16 @@ class ErrorScreen extends StatelessWidget {
     required this.message,
   });
 
-  static const Color primary =
-  Color(0xFF6C5CE7);
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor:
-      const Color(0xFFF5F6FF),
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding:
-            const EdgeInsets.all(24),
-            child: Container(
-              padding:
-              const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius:
-                BorderRadius.circular(28),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(
-                      alpha: 0.03,
-                    ),
-                    blurRadius: 20,
-                    offset:
-                    const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize:
-                MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.error_outline,
-                    size: 64,
-                    color: Colors.red,
-                  ),
-                  const SizedBox(
-                    height: 16,
-                  ),
-                  const Text(
-                    'NIMO Failed to Start',
-                    textAlign:
-                    TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight:
-                      FontWeight.bold,
-                      color: primary,
-                    ),
-                  ),
-                  const SizedBox(
-                    height: 12,
-                  ),
-                  Text(
-                    message,
-                    textAlign:
-                    TextAlign.center,
-                    style:
-                    const TextStyle(
-                      color:
-                      Colors.grey,
-                      height: 1.5,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+      body: Center(
+        child: Padding(
+          padding:
+          const EdgeInsets.all(24),
+          child: Text(
+            message,
+            textAlign: TextAlign.center,
           ),
         ),
       ),
@@ -346,30 +387,63 @@ class ErrorScreen extends StatelessWidget {
 }
 
 // =========================================================
-// APP THEME
+// LIGHT THEME
 // =========================================================
 
-ThemeData _buildTheme() {
-  const Color primary =
-  Color(0xFF6C5CE7);
-  const Color secondary =
-  Color(0xFF8E7BFF);
-  const Color background =
-  Color(0xFFF5F6FF);
+ThemeData _buildLightTheme() {
+  const primary = Color(0xFF6C5CE7);
 
   final colorScheme =
   ColorScheme.fromSeed(
     seedColor: primary,
-    primary: primary,
-    secondary: secondary,
-    surface: Colors.white,
+    brightness: Brightness.light,
   );
 
   return ThemeData(
     useMaterial3: true,
-    fontFamily: 'Roboto',
-    scaffoldBackgroundColor:
-    background,
     colorScheme: colorScheme,
+    scaffoldBackgroundColor:
+    const Color(0xFFF5F6FF),
+    appBarTheme: const AppBarTheme(
+      centerTitle: false,
+      elevation: 0,
+      backgroundColor:
+      Color(0xFFF5F6FF),
+      foregroundColor:
+      Colors.black87,
+      surfaceTintColor:
+      Colors.transparent,
+    ),
+  );
+}
+
+// =========================================================
+// DARK THEME
+// =========================================================
+
+ThemeData _buildDarkTheme() {
+  const primary = Color(0xFF6C5CE7);
+
+  final colorScheme =
+  ColorScheme.fromSeed(
+    seedColor: primary,
+    brightness: Brightness.dark,
+  );
+
+  return ThemeData(
+    useMaterial3: true,
+    colorScheme: colorScheme,
+    scaffoldBackgroundColor:
+    const Color(0xFF121212),
+    appBarTheme: const AppBarTheme(
+      centerTitle: false,
+      elevation: 0,
+      backgroundColor:
+      Color(0xFF121212),
+      foregroundColor:
+      Colors.white,
+      surfaceTintColor:
+      Colors.transparent,
+    ),
   );
 }
